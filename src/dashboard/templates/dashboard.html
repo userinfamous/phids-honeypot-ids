@@ -120,22 +120,22 @@
             <!-- Enhanced Controls -->
             <div class="navbar-nav me-auto">
                 <div class="nav-item dropdown">
-                    <a class="nav-link dropdown-toggle text-white" href="#" role="button" data-bs-toggle="dropdown">
+                    <a class="nav-link dropdown-toggle text-white" href="#" id="controlsDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
                         <i class="fas fa-cog me-1"></i>Controls
                     </a>
-                    <ul class="dropdown-menu">
-                        <li><a class="dropdown-item" href="#" onclick="showClearLogsModal()">
-                            <i class="fas fa-trash me-2"></i>Clear Logs
+                    <ul class="dropdown-menu" aria-labelledby="controlsDropdown">
+                        <li><a class="dropdown-item" href="#" onclick="showClearLogsModal(); return false;">
+                            <i class="fas fa-trash me-2 text-danger"></i>Clear Logs
                         </a></li>
-                        <li><a class="dropdown-item" href="#" onclick="toggleViewMode()">
-                            <i class="fas fa-clock me-2"></i>Toggle Live/Historical
+                        <li><a class="dropdown-item" href="#" onclick="toggleViewMode(); return false;">
+                            <i class="fas fa-clock me-2 text-info"></i>Toggle Live/Historical
                         </a></li>
                         <li><hr class="dropdown-divider"></li>
-                        <li><a class="dropdown-item" href="#" onclick="exportData('connections', 'csv')">
-                            <i class="fas fa-download me-2"></i>Export Connections (CSV)
+                        <li><a class="dropdown-item" href="#" onclick="exportData('connections', 'csv'); return false;">
+                            <i class="fas fa-download me-2 text-success"></i>Export Connections (CSV)
                         </a></li>
-                        <li><a class="dropdown-item" href="#" onclick="exportData('alerts', 'csv')">
-                            <i class="fas fa-download me-2"></i>Export Alerts (CSV)
+                        <li><a class="dropdown-item" href="#" onclick="exportData('alerts', 'csv'); return false;">
+                            <i class="fas fa-download me-2 text-success"></i>Export Alerts (CSV)
                         </a></li>
                     </ul>
                 </div>
@@ -143,6 +143,13 @@
                 <div class="nav-item">
                     <button class="btn btn-outline-light btn-sm ms-2" onclick="toggleFilters()">
                         <i class="fas fa-filter me-1"></i>Filters
+                    </button>
+                </div>
+
+                <!-- Quick Clear Logs Button (Alternative) -->
+                <div class="nav-item">
+                    <button class="btn btn-outline-danger btn-sm ms-2" onclick="showClearLogsModal()" title="Clear Logs">
+                        <i class="fas fa-trash me-1"></i>Clear Logs
                     </button>
                 </div>
             </div>

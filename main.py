@@ -22,6 +22,7 @@ from src.analysis.log_analyzer import LogAnalyzer
 from src.reporting.report_generator import ReportGenerator
 from src.dashboard.web_server import DashboardWebServer
 from src.dashboard.event_broadcaster import event_broadcaster
+from src.capture.network_monitor import NetworkMonitor, check_network_monitoring_requirements
 
 
 class PHIDSManager:
@@ -35,6 +36,8 @@ class PHIDSManager:
         self.log_analyzer = None
         self.report_generator = None
         self.dashboard = None
+        self.network_monitor = None
+        self.live_monitoring_enabled = False
         
     async def initialize(self):
         """Initialize all components"""
@@ -67,6 +70,20 @@ class PHIDSManager:
 
         self.honeypots = [ssh_honeypot, http_honeypot]
 
+        # Initialize network monitor
+        self.network_monitor = NetworkMonitor(db_manager, self.ids_engine)
+
+        # Check network monitoring requirements
+        requirements = check_network_monitoring_requirements()
+        if requirements['scapy_available']:
+            self.logger.info("Network monitoring capabilities available")
+            if requirements['admin_privileges']:
+                self.logger.info("Admin privileges detected - full network monitoring enabled")
+            else:
+                self.logger.warning("Limited privileges - some network monitoring features may be restricted")
+        else:
+            self.logger.warning("Scapy not available - network monitoring disabled")
+
         self.logger.info("PHIDS initialization complete")
     
     async def start(self):
@@ -95,6 +112,15 @@ class PHIDSManager:
         dashboard_task = None
         if self.dashboard:
             dashboard_task = asyncio.create_task(self.dashboard.start())
+
+        # Start network monitoring (if enabled)
+        network_monitor_task = None
+        if self.live_monitoring_enabled and self.network_monitor:
+            try:
+                await self.network_monitor.start_monitoring()
+                self.logger.info("Live network monitoring started")
+            except Exception as e:
+                self.logger.error(f"Failed to start network monitoring: {e}")
 
         self.logger.info("All PHIDS services started successfully")
 
@@ -125,6 +151,8 @@ class PHIDSManager:
             await self.report_generator.stop()
         if self.dashboard:
             await self.dashboard.stop()
+        if self.network_monitor:
+            self.network_monitor.stop_monitoring()
 
         self.logger.info("PHIDS stopped successfully")
 
@@ -135,6 +163,8 @@ async def main():
     parser.add_argument("--config", help="Configuration file path")
     parser.add_argument("--debug", action="store_true", help="Enable debug logging")
     parser.add_argument("--daemon", action="store_true", help="Run as daemon")
+    parser.add_argument("--live-monitoring", action="store_true", help="Enable live network monitoring")
+    parser.add_argument("--interface", help="Network interface for live monitoring")
     
     args = parser.parse_args()
     
@@ -147,6 +177,25 @@ async def main():
     
     # Create and initialize PHIDS manager
     phids = PHIDSManager()
+
+    # Configure live monitoring if requested
+    if args.live_monitoring:
+        phids.live_monitoring_enabled = True
+        logger.info("Live network monitoring enabled")
+
+        # Check requirements
+        requirements = check_network_monitoring_requirements()
+        if not requirements['scapy_available']:
+            logger.error("Live monitoring requires Scapy. Install with: pip install scapy")
+            return 1
+
+        if not requirements['admin_privileges']:
+            logger.warning("Live monitoring may require administrator privileges for full functionality")
+
+        if args.interface:
+            logger.info(f"Using network interface: {args.interface}")
+    else:
+        logger.info("Live network monitoring disabled (use --live-monitoring to enable)")
     
     # Setup signal handlers for graceful shutdown
     def signal_handler(signum, frame):
