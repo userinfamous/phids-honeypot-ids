@@ -302,13 +302,215 @@ python demo_dashboard.py --live
 ### **Run Tests**
 ```bash
 # Comprehensive test suite
-python -m pytest tests/ -v --cov=src
+python -m pytest test_phids.py test_dashboard.py test_main.py -v
 
 # Component-specific testing
 python test_phids.py              # Core honeypot functionality
 python test_dashboard.py          # Web dashboard features
 python test_main.py              # Integration testing
-python test_dashboard_complete.py # Full system verification
+```
+
+---
+
+## 🎯 **Live Attack Simulation & Interactive Demo**
+
+**Transform static demo data into live, realistic attack scenarios for impressive demonstrations!**
+
+### **🚀 Quick Live Demo Setup**
+```bash
+# Terminal 1: Start PHIDS with real-time monitoring
+python main.py --debug
+
+# Terminal 2: Launch continuous attack simulation
+python demo_dashboard.py --live
+
+# Terminal 3: Open dashboard
+# Browser: http://127.0.0.1:5000
+# Watch real-time attacks flow into the dashboard!
+```
+
+### **🔥 Manual Attack Simulation**
+
+#### **SSH Honeypot Attacks (Port 2222)**
+```bash
+# Simulate SSH brute force attacks
+# Terminal 1: Start PHIDS
+python main.py --debug
+
+# Terminal 2: Generate SSH attacks
+# Method 1: Using SSH client (if available)
+ssh admin@127.0.0.1 -p 2222
+# Try passwords: admin, password, 123456, root
+
+# Method 2: Using telnet for connection testing
+telnet 127.0.0.1 2222
+
+# Method 3: Python script for automated attacks
+python -c "
+import socket
+import time
+
+def ssh_attack():
+    for i in range(5):
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.connect(('127.0.0.1', 2222))
+            print(f'Attack {i+1}: Connected to SSH honeypot')
+            time.sleep(1)
+            sock.close()
+        except Exception as e:
+            print(f'Attack {i+1}: {e}')
+        time.sleep(2)
+
+ssh_attack()
+"
+```
+
+#### **HTTP Honeypot Attacks (Port 8080)**
+```bash
+# Simulate web application attacks
+# Terminal 1: Start PHIDS
+python main.py --debug
+
+# Terminal 2: Generate HTTP attacks
+# SQL Injection attempts
+curl \"http://127.0.0.1:8080/login?user=admin&pass=admin' OR '1'='1\"
+curl \"http://127.0.0.1:8080/search?q='; DROP TABLE users; --\"
+
+# XSS attempts
+curl \"http://127.0.0.1:8080/comment\" -d \"text=<script>alert('XSS')</script>\"
+curl \"http://127.0.0.1:8080/profile?name=<img src=x onerror=alert(1)>\"
+
+# Directory traversal
+curl \"http://127.0.0.1:8080/file?path=../../../etc/passwd\"
+curl \"http://127.0.0.1:8080/download?file=../../../../windows/system32/config/sam\"
+
+# Admin panel discovery
+curl http://127.0.0.1:8080/admin
+curl http://127.0.0.1:8080/wp-admin
+curl http://127.0.0.1:8080/phpmyadmin
+curl http://127.0.0.1:8080/administrator
+```
+
+### **🎭 Advanced Attack Scenarios**
+
+#### **Multi-Vector Attack Campaign**
+```bash
+# Simulate sophisticated attack campaign
+python -c "
+import threading
+import requests
+import socket
+import time
+import random
+
+def ssh_bruteforce():
+    '''Simulate SSH brute force'''
+    for i in range(10):
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.connect(('127.0.0.1', 2222))
+            print(f'[SSH] Brute force attempt {i+1}')
+            sock.close()
+        except:
+            pass
+        time.sleep(random.uniform(1, 3))
+
+def web_attacks():
+    '''Simulate web application attacks'''
+    payloads = [
+        '/admin',
+        '/login?user=admin&pass=admin',
+        '/search?q=<script>alert(1)</script>',
+        '/file?path=../../../etc/passwd',
+        '/api/users?id=1 UNION SELECT * FROM passwords'
+    ]
+
+    for payload in payloads:
+        try:
+            requests.get(f'http://127.0.0.1:8080{payload}', timeout=5)
+            print(f'[HTTP] Attack: {payload}')
+        except:
+            pass
+        time.sleep(random.uniform(2, 5))
+
+# Launch concurrent attacks
+print('🚨 Starting multi-vector attack simulation...')
+ssh_thread = threading.Thread(target=ssh_bruteforce)
+web_thread = threading.Thread(target=web_attacks)
+
+ssh_thread.start()
+web_thread.start()
+
+ssh_thread.join()
+web_thread.join()
+print('✅ Attack simulation complete!')
+"
+```
+
+### **📊 Real-Time Dashboard Monitoring**
+
+**Watch these live updates in your dashboard:**
+
+1. **📈 Statistics Cards Update**
+   - Connection count increases in real-time
+   - Alert count rises with each attack
+   - Unique IP tracking shows attack sources
+
+2. **🎯 Live Activity Feed**
+   - New connections appear instantly
+   - Security alerts trigger immediately
+   - Color-coded events (green=connection, red=alert)
+
+3. **📊 Interactive Charts**
+   - Hourly activity chart shows attack spikes
+   - Service breakdown updates with SSH vs HTTP traffic
+   - Real-time data visualization
+
+4. **👥 Top Attackers List**
+   - Your local IP appears as top attacker
+   - Attack frequency counters increment
+   - Geographic information displays
+
+### **🔄 Continuous Demo Mode**
+```bash
+# Ultimate demo: Continuous realistic attack simulation
+python -c "
+import subprocess
+import time
+import threading
+import random
+
+def continuous_attacks():
+    '''Generate continuous attack traffic'''
+    while True:
+        # Random attack type
+        if random.choice([True, False]):
+            # SSH attack
+            subprocess.run(['python', '-c', '''
+import socket
+try:
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.connect((\"127.0.0.1\", 2222))
+    sock.close()
+except: pass
+'''], capture_output=True)
+        else:
+            # HTTP attack
+            subprocess.run(['curl', '-s', 'http://127.0.0.1:8080/admin'],
+                         capture_output=True)
+
+        time.sleep(random.uniform(5, 15))
+
+print('🎯 Starting continuous attack simulation...')
+print('💡 Open dashboard: http://127.0.0.1:5000')
+print('⏹️  Press Ctrl+C to stop')
+
+try:
+    continuous_attacks()
+except KeyboardInterrupt:
+    print('\\n✅ Demo stopped')
+"
 ```
 
 ---
