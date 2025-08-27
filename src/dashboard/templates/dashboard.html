@@ -116,7 +116,43 @@
                 <i class="fas fa-shield-alt me-2"></i>
                 PHIDS Dashboard
             </a>
+
+            <!-- Enhanced Controls -->
+            <div class="navbar-nav me-auto">
+                <div class="nav-item dropdown">
+                    <a class="nav-link dropdown-toggle text-white" href="#" role="button" data-bs-toggle="dropdown">
+                        <i class="fas fa-cog me-1"></i>Controls
+                    </a>
+                    <ul class="dropdown-menu">
+                        <li><a class="dropdown-item" href="#" onclick="showClearLogsModal()">
+                            <i class="fas fa-trash me-2"></i>Clear Logs
+                        </a></li>
+                        <li><a class="dropdown-item" href="#" onclick="toggleViewMode()">
+                            <i class="fas fa-clock me-2"></i>Toggle Live/Historical
+                        </a></li>
+                        <li><hr class="dropdown-divider"></li>
+                        <li><a class="dropdown-item" href="#" onclick="exportData('connections', 'csv')">
+                            <i class="fas fa-download me-2"></i>Export Connections (CSV)
+                        </a></li>
+                        <li><a class="dropdown-item" href="#" onclick="exportData('alerts', 'csv')">
+                            <i class="fas fa-download me-2"></i>Export Alerts (CSV)
+                        </a></li>
+                    </ul>
+                </div>
+
+                <div class="nav-item">
+                    <button class="btn btn-outline-light btn-sm ms-2" onclick="toggleFilters()">
+                        <i class="fas fa-filter me-1"></i>Filters
+                    </button>
+                </div>
+            </div>
+
             <div class="navbar-nav ms-auto">
+                <span class="navbar-text me-3">
+                    <span id="view-mode-indicator" class="badge bg-info">
+                        <i class="fas fa-broadcast-tower me-1"></i>Live Mode
+                    </span>
+                </span>
                 <span class="navbar-text">
                     <span class="status-indicator status-online pulse" id="connectionStatus"></span>
                     <span id="connectionText">Connected</span>
@@ -124,6 +160,54 @@
             </div>
         </div>
     </nav>
+
+    <!-- Advanced Filters Panel -->
+    <div id="filters-panel" class="container-fluid bg-light border-bottom" style="display: none;">
+        <div class="row py-3">
+            <div class="col-md-2">
+                <label class="form-label">IP Address</label>
+                <input type="text" class="form-control form-control-sm" id="filter-ip" placeholder="192.168.1.100">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">Service</label>
+                <select class="form-select form-select-sm" id="filter-service">
+                    <option value="">All Services</option>
+                    <option value="ssh">SSH</option>
+                    <option value="http">HTTP</option>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">Severity</label>
+                <select class="form-select form-select-sm" id="filter-severity">
+                    <option value="">All Severities</option>
+                    <option value="high">High</option>
+                    <option value="medium">Medium</option>
+                    <option value="low">Low</option>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">Time Range</label>
+                <select class="form-select form-select-sm" id="filter-time-range">
+                    <option value="1">Last Hour</option>
+                    <option value="24" selected>Last 24 Hours</option>
+                    <option value="168">Last Week</option>
+                    <option value="custom">Custom Range</option>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">Alert Type</label>
+                <input type="text" class="form-control form-control-sm" id="filter-alert-type" placeholder="SQL Injection">
+            </div>
+            <div class="col-md-2 d-flex align-items-end">
+                <button class="btn btn-primary btn-sm me-2" onclick="applyFilters()">
+                    <i class="fas fa-search me-1"></i>Apply
+                </button>
+                <button class="btn btn-secondary btn-sm" onclick="clearFilters()">
+                    <i class="fas fa-times me-1"></i>Clear
+                </button>
+            </div>
+        </div>
+    </div>
 
     <div class="container-fluid mt-4">
         <!-- Statistics Cards -->
@@ -483,5 +567,247 @@
             new PHIDSDashboard();
         });
     </script>
+
+    <!-- Clear Logs Modal -->
+    <div class="modal fade" id="clearLogsModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        <i class="fas fa-exclamation-triangle text-warning me-2"></i>
+                        Clear Logs Confirmation
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <p><strong>Warning:</strong> This action will permanently delete log data and cannot be undone.</p>
+                    <p>Select what to clear:</p>
+                    <div class="form-check">
+                        <input class="form-check-input" type="radio" name="clearType" id="clearAll" value="all" checked>
+                        <label class="form-check-label" for="clearAll">
+                            <strong>All Logs</strong> - Clear both connections and alerts
+                        </label>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="radio" name="clearType" id="clearConnections" value="connections">
+                        <label class="form-check-label" for="clearConnections">
+                            <strong>Connections Only</strong> - Keep alerts, clear honeypot connections
+                        </label>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="radio" name="clearType" id="clearAlerts" value="alerts">
+                        <label class="form-check-label" for="clearAlerts">
+                            <strong>Alerts Only</strong> - Keep connections, clear IDS alerts
+                        </label>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-danger" onclick="confirmClearLogs()">
+                        <i class="fas fa-trash me-1"></i>Clear Logs
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Enhanced JavaScript Functions -->
+    <script>
+        // Global variables for enhanced functionality
+        let isLiveMode = true;
+        let currentFilters = {};
+        let dashboard = null;
+
+        // Show clear logs modal
+        function showClearLogsModal() {
+            const modal = new bootstrap.Modal(document.getElementById('clearLogsModal'));
+            modal.show();
+        }
+
+        // Confirm and execute log clearing
+        async function confirmClearLogs() {
+            const clearType = document.querySelector('input[name="clearType"]:checked').value;
+
+            try {
+                const response = await fetch('/api/clear-logs', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ type: clearType })
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    // Close modal
+                    bootstrap.Modal.getInstance(document.getElementById('clearLogsModal')).hide();
+
+                    // Show success message
+                    showNotification('success', `Successfully cleared ${clearType}`);
+
+                    // Refresh dashboard data
+                    if (dashboard) {
+                        dashboard.loadData();
+                    }
+                } else {
+                    showNotification('error', result.message || 'Failed to clear logs');
+                }
+            } catch (error) {
+                console.error('Error clearing logs:', error);
+                showNotification('error', 'Error clearing logs: ' + error.message);
+            }
+        }
+
+        // Toggle between live and historical mode
+        function toggleViewMode() {
+            isLiveMode = !isLiveMode;
+            const indicator = document.getElementById('view-mode-indicator');
+
+            if (isLiveMode) {
+                indicator.innerHTML = '<i class="fas fa-broadcast-tower me-1"></i>Live Mode';
+                indicator.className = 'badge bg-info';
+                showNotification('info', 'Switched to Live Mode - Real-time updates enabled');
+            } else {
+                indicator.innerHTML = '<i class="fas fa-history me-1"></i>Historical Mode';
+                indicator.className = 'badge bg-secondary';
+                showNotification('info', 'Switched to Historical Mode - Real-time updates paused');
+            }
+        }
+
+        // Toggle filters panel
+        function toggleFilters() {
+            const panel = document.getElementById('filters-panel');
+            panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+        }
+
+        // Apply filters
+        function applyFilters() {
+            currentFilters = {
+                ip: document.getElementById('filter-ip').value,
+                service: document.getElementById('filter-service').value,
+                severity: document.getElementById('filter-severity').value,
+                alert_type: document.getElementById('filter-alert-type').value,
+                time_range: document.getElementById('filter-time-range').value
+            };
+
+            // Remove empty filters
+            Object.keys(currentFilters).forEach(key => {
+                if (!currentFilters[key]) {
+                    delete currentFilters[key];
+                }
+            });
+
+            showNotification('info', 'Filters applied - Refreshing data...');
+
+            // Refresh dashboard with filters
+            if (dashboard) {
+                dashboard.loadFilteredData(currentFilters);
+            }
+        }
+
+        // Clear all filters
+        function clearFilters() {
+            document.getElementById('filter-ip').value = '';
+            document.getElementById('filter-service').value = '';
+            document.getElementById('filter-severity').value = '';
+            document.getElementById('filter-alert-type').value = '';
+            document.getElementById('filter-time-range').value = '24';
+
+            currentFilters = {};
+            showNotification('info', 'Filters cleared');
+
+            // Refresh dashboard
+            if (dashboard) {
+                dashboard.loadData();
+            }
+        }
+
+        // Export data
+        async function exportData(type, format) {
+            try {
+                const params = new URLSearchParams(currentFilters);
+                params.append('format', format);
+
+                const response = await fetch(`/api/export/${type}?${params}`);
+
+                if (response.headers.get('content-type')?.includes('text/csv')) {
+                    // Handle CSV download
+                    const blob = await response.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `${type}_${new Date().toISOString().split('T')[0]}.csv`;
+                    document.body.appendChild(a);
+                    a.click();
+                    window.URL.revokeObjectURL(url);
+                    document.body.removeChild(a);
+
+                    showNotification('success', `${type} exported successfully`);
+                } else {
+                    const result = await response.json();
+                    if (result.error) {
+                        showNotification('error', result.error);
+                    }
+                }
+            } catch (error) {
+                console.error('Export error:', error);
+                showNotification('error', 'Export failed: ' + error.message);
+            }
+        }
+
+        // Show notification
+        function showNotification(type, message) {
+            // Create notification element
+            const notification = document.createElement('div');
+            notification.className = `alert alert-${type === 'error' ? 'danger' : type} alert-dismissible fade show position-fixed`;
+            notification.style.cssText = 'top: 20px; right: 20px; z-index: 9999; min-width: 300px;';
+            notification.innerHTML = `
+                ${message}
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            `;
+
+            document.body.appendChild(notification);
+
+            // Auto-remove after 5 seconds
+            setTimeout(() => {
+                if (notification.parentNode) {
+                    notification.remove();
+                }
+            }, 5000);
+        }
+
+        // Enhanced dashboard initialization
+        document.addEventListener('DOMContentLoaded', () => {
+            dashboard = new PHIDSDashboard();
+
+            // Add enhanced functionality to existing dashboard
+            const originalLoadData = dashboard.loadData;
+            dashboard.loadFilteredData = async function(filters) {
+                // Implementation for filtered data loading
+                try {
+                    // Load filtered connections
+                    const connParams = new URLSearchParams(filters);
+                    const connResponse = await fetch(`/api/filtered-connections?${connParams}`);
+                    const connData = await connResponse.json();
+
+                    // Load filtered alerts
+                    const alertParams = new URLSearchParams(filters);
+                    const alertResponse = await fetch(`/api/filtered-alerts?${alertParams}`);
+                    const alertData = await alertResponse.json();
+
+                    // Update activity log with filtered data
+                    this.updateActivityLog(connData.connections, alertData.alerts);
+
+                } catch (error) {
+                    console.error('Error loading filtered data:', error);
+                    showNotification('error', 'Failed to load filtered data');
+                }
+            };
+        });
+    </script>
+
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>

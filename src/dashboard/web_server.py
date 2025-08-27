@@ -76,7 +76,7 @@ class DashboardWebServer:
             """Get recent IDS alerts"""
             if not self.db_manager:
                 return {"alerts": []}
-            
+
             try:
                 # Get alerts from last 24 hours
                 since = datetime.now() - timedelta(hours=24)
@@ -85,7 +85,217 @@ class DashboardWebServer:
             except Exception as e:
                 self.logger.error(f"Error fetching recent alerts: {e}")
                 return {"alerts": []}
-        
+
+        # Enhanced Log Management Endpoints
+        @self.app.post("/api/clear-logs")
+        async def clear_logs(request: Request):
+            """Clear logs with confirmation"""
+            if not self.db_manager:
+                return {"success": False, "message": "Database not available"}
+
+            try:
+                body = await request.json()
+                clear_type = body.get('type', 'all')  # 'all', 'connections', 'alerts'
+
+                if clear_type == 'all':
+                    success = await self.db_manager.clear_all_logs()
+                elif clear_type == 'connections':
+                    success = await self.db_manager.clear_connections_only()
+                elif clear_type == 'alerts':
+                    success = await self.db_manager.clear_alerts_only()
+                else:
+                    return {"success": False, "message": "Invalid clear type"}
+
+                if success:
+                    # Broadcast clear event to connected clients
+                    await self.broadcast_event({
+                        "type": "logs_cleared",
+                        "clear_type": clear_type,
+                        "timestamp": datetime.now().isoformat()
+                    })
+
+                return {"success": success, "message": f"Successfully cleared {clear_type}" if success else "Failed to clear logs"}
+            except Exception as e:
+                self.logger.error(f"Error clearing logs: {e}")
+                return {"success": False, "message": str(e)}
+
+        @self.app.get("/api/filtered-connections")
+        async def get_filtered_connections(
+            ip: str = None,
+            service: str = None,
+            start_time: str = None,
+            end_time: str = None,
+            session_id: str = None,
+            limit: int = 100
+        ):
+            """Get filtered connections"""
+            if not self.db_manager:
+                return {"connections": [], "count": 0}
+
+            try:
+                filters = {}
+                if ip:
+                    filters['ip'] = ip
+                if service:
+                    filters['service'] = service
+                if start_time:
+                    filters['start_time'] = start_time
+                if end_time:
+                    filters['end_time'] = end_time
+                if session_id:
+                    filters['session_id'] = session_id
+
+                connections = await self.db_manager.get_filtered_connections(filters, limit)
+                return {"connections": connections, "count": len(connections)}
+            except Exception as e:
+                self.logger.error(f"Error fetching filtered connections: {e}")
+                return {"connections": [], "count": 0}
+
+        @self.app.get("/api/filtered-alerts")
+        async def get_filtered_alerts(
+            ip: str = None,
+            severity: str = None,
+            alert_type: str = None,
+            start_time: str = None,
+            end_time: str = None,
+            limit: int = 100
+        ):
+            """Get filtered alerts"""
+            if not self.db_manager:
+                return {"alerts": [], "count": 0}
+
+            try:
+                filters = {}
+                if ip:
+                    filters['ip'] = ip
+                if severity:
+                    filters['severity'] = severity
+                if alert_type:
+                    filters['alert_type'] = alert_type
+                if start_time:
+                    filters['start_time'] = start_time
+                if end_time:
+                    filters['end_time'] = end_time
+
+                alerts = await self.db_manager.get_filtered_alerts(filters, limit)
+                return {"alerts": alerts, "count": len(alerts)}
+            except Exception as e:
+                self.logger.error(f"Error fetching filtered alerts: {e}")
+                return {"alerts": [], "count": 0}
+
+        @self.app.get("/api/export/connections")
+        async def export_connections(
+            format: str = "csv",
+            ip: str = None,
+            service: str = None,
+            start_time: str = None,
+            end_time: str = None
+        ):
+            """Export connections to CSV or JSON"""
+            if not self.db_manager:
+                return {"error": "Database not available"}
+
+            try:
+                filters = {}
+                if ip:
+                    filters['ip'] = ip
+                if service:
+                    filters['service'] = service
+                if start_time:
+                    filters['start_time'] = start_time
+                if end_time:
+                    filters['end_time'] = end_time
+
+                if format.lower() == "csv":
+                    csv_data = await self.db_manager.export_connections_to_csv(filters)
+                    if csv_data:
+                        from fastapi.responses import Response
+                        return Response(
+                            content=csv_data,
+                            media_type="text/csv",
+                            headers={"Content-Disposition": "attachment; filename=connections.csv"}
+                        )
+                    else:
+                        return {"error": "No data to export"}
+                else:
+                    connections = await self.db_manager.get_filtered_connections(filters, limit=10000)
+                    return {"connections": connections, "count": len(connections)}
+
+            except Exception as e:
+                self.logger.error(f"Error exporting connections: {e}")
+                return {"error": str(e)}
+
+        @self.app.get("/api/export/alerts")
+        async def export_alerts(
+            format: str = "csv",
+            ip: str = None,
+            severity: str = None,
+            alert_type: str = None,
+            start_time: str = None,
+            end_time: str = None
+        ):
+            """Export alerts to CSV or JSON"""
+            if not self.db_manager:
+                return {"error": "Database not available"}
+
+            try:
+                filters = {}
+                if ip:
+                    filters['ip'] = ip
+                if severity:
+                    filters['severity'] = severity
+                if alert_type:
+                    filters['alert_type'] = alert_type
+                if start_time:
+                    filters['start_time'] = start_time
+                if end_time:
+                    filters['end_time'] = end_time
+
+                if format.lower() == "csv":
+                    csv_data = await self.db_manager.export_alerts_to_csv(filters)
+                    if csv_data:
+                        from fastapi.responses import Response
+                        return Response(
+                            content=csv_data,
+                            media_type="text/csv",
+                            headers={"Content-Disposition": "attachment; filename=alerts.csv"}
+                        )
+                    else:
+                        return {"error": "No data to export"}
+                else:
+                    alerts = await self.db_manager.get_filtered_alerts(filters, limit=10000)
+                    return {"alerts": alerts, "count": len(alerts)}
+
+            except Exception as e:
+                self.logger.error(f"Error exporting alerts: {e}")
+                return {"error": str(e)}
+
+        @self.app.get("/api/timeline")
+        async def get_attack_timeline(hours: int = 24):
+            """Get attack timeline data"""
+            if not self.db_manager:
+                return {"timeline": []}
+
+            try:
+                timeline = await self.db_manager.get_attack_timeline(hours)
+                return {"timeline": timeline, "period_hours": hours}
+            except Exception as e:
+                self.logger.error(f"Error fetching timeline: {e}")
+                return {"timeline": []}
+
+        @self.app.get("/api/threat-summary")
+        async def get_threat_summary(hours: int = 24):
+            """Get comprehensive threat summary"""
+            if not self.db_manager:
+                return {"connections": [], "alerts": [], "period_hours": hours}
+
+            try:
+                summary = await self.db_manager.get_threat_summary(hours)
+                return summary
+            except Exception as e:
+                self.logger.error(f"Error fetching threat summary: {e}")
+                return {"connections": [], "alerts": [], "period_hours": hours}
+
         @self.app.websocket("/ws")
         async def websocket_endpoint(websocket: WebSocket):
             """WebSocket endpoint for real-time updates"""
@@ -115,6 +325,24 @@ class DashboardWebServer:
             self.logger.info(f"WebSocket disconnected. Active connections: {len(self.active_connections)}")
         except Exception as e:
             self.logger.error(f"WebSocket error: {e}")
+            if websocket in self.active_connections:
+                self.active_connections.remove(websocket)
+
+    async def broadcast_event(self, event_data):
+        """Broadcast event to all connected WebSocket clients"""
+        if not self.active_connections:
+            return
+
+        disconnected = []
+        for websocket in self.active_connections:
+            try:
+                await websocket.send_json(event_data)
+            except Exception as e:
+                self.logger.error(f"Error broadcasting to WebSocket: {e}")
+                disconnected.append(websocket)
+
+        # Remove disconnected clients
+        for websocket in disconnected:
             if websocket in self.active_connections:
                 self.active_connections.remove(websocket)
     

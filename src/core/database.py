@@ -391,3 +391,253 @@ class DatabaseManager:
         except Exception as e:
             self.logger.error(f"Error fetching alert severity breakdown: {e}")
             return {}
+
+    # Enhanced Log Management Methods
+    async def clear_all_logs(self):
+        """Clear all honeypot connections and IDS alerts"""
+        try:
+            async with aiosqlite.connect(self.db_path) as db:
+                await db.execute("DELETE FROM honeypot_connections")
+                await db.execute("DELETE FROM ids_alerts")
+                await db.commit()
+                self.logger.info("All logs cleared successfully")
+                return True
+        except Exception as e:
+            self.logger.error(f"Error clearing logs: {e}")
+            return False
+
+    async def clear_connections_only(self):
+        """Clear only honeypot connections"""
+        try:
+            async with aiosqlite.connect(self.db_path) as db:
+                await db.execute("DELETE FROM honeypot_connections")
+                await db.commit()
+                self.logger.info("Honeypot connections cleared successfully")
+                return True
+        except Exception as e:
+            self.logger.error(f"Error clearing connections: {e}")
+            return False
+
+    async def clear_alerts_only(self):
+        """Clear only IDS alerts"""
+        try:
+            async with aiosqlite.connect(self.db_path) as db:
+                await db.execute("DELETE FROM ids_alerts")
+                await db.commit()
+                self.logger.info("IDS alerts cleared successfully")
+                return True
+        except Exception as e:
+            self.logger.error(f"Error clearing alerts: {e}")
+            return False
+
+    async def get_filtered_connections(self, filters=None, limit=100):
+        """Get connections with advanced filtering"""
+        try:
+            query = """
+                SELECT source_ip, source_port, destination_port, service_type,
+                       session_id, timestamp, connection_data, commands, payloads
+                FROM honeypot_connections
+            """
+            params = []
+            conditions = []
+
+            if filters:
+                if filters.get('ip'):
+                    conditions.append("source_ip LIKE ?")
+                    params.append(f"%{filters['ip']}%")
+                if filters.get('service'):
+                    conditions.append("service_type = ?")
+                    params.append(filters['service'])
+                if filters.get('start_time'):
+                    conditions.append("timestamp >= ?")
+                    params.append(filters['start_time'])
+                if filters.get('end_time'):
+                    conditions.append("timestamp <= ?")
+                    params.append(filters['end_time'])
+                if filters.get('session_id'):
+                    conditions.append("session_id LIKE ?")
+                    params.append(f"%{filters['session_id']}%")
+
+            if conditions:
+                query += " WHERE " + " AND ".join(conditions)
+
+            query += " ORDER BY timestamp DESC LIMIT ?"
+            params.append(limit)
+
+            async with aiosqlite.connect(self.db_path) as db:
+                db.row_factory = aiosqlite.Row
+                cursor = await db.execute(query, params)
+                rows = await cursor.fetchall()
+                return [dict(row) for row in rows]
+
+        except Exception as e:
+            self.logger.error(f"Error getting filtered connections: {e}")
+            return []
+
+    async def get_filtered_alerts(self, filters=None, limit=100):
+        """Get alerts with advanced filtering"""
+        try:
+            query = """
+                SELECT alert_type, severity, source_ip, destination_ip,
+                       source_port, destination_port, protocol, signature_id,
+                       description, timestamp, raw_data
+                FROM ids_alerts
+            """
+            params = []
+            conditions = []
+
+            if filters:
+                if filters.get('ip'):
+                    conditions.append("(source_ip LIKE ? OR destination_ip LIKE ?)")
+                    params.extend([f"%{filters['ip']}%", f"%{filters['ip']}%"])
+                if filters.get('severity'):
+                    conditions.append("severity = ?")
+                    params.append(filters['severity'])
+                if filters.get('alert_type'):
+                    conditions.append("alert_type LIKE ?")
+                    params.append(f"%{filters['alert_type']}%")
+                if filters.get('start_time'):
+                    conditions.append("timestamp >= ?")
+                    params.append(filters['start_time'])
+                if filters.get('end_time'):
+                    conditions.append("timestamp <= ?")
+                    params.append(filters['end_time'])
+
+            if conditions:
+                query += " WHERE " + " AND ".join(conditions)
+
+            query += " ORDER BY timestamp DESC LIMIT ?"
+            params.append(limit)
+
+            async with aiosqlite.connect(self.db_path) as db:
+                db.row_factory = aiosqlite.Row
+                cursor = await db.execute(query, params)
+                rows = await cursor.fetchall()
+                return [dict(row) for row in rows]
+
+        except Exception as e:
+            self.logger.error(f"Error getting filtered alerts: {e}")
+            return []
+
+    async def export_connections_to_csv(self, filters=None):
+        """Export connections to CSV format"""
+        try:
+            connections = await self.get_filtered_connections(filters, limit=10000)
+
+            if not connections:
+                return None
+
+            import csv
+            import io
+
+            output = io.StringIO()
+            writer = csv.DictWriter(output, fieldnames=connections[0].keys())
+            writer.writeheader()
+            writer.writerows(connections)
+
+            return output.getvalue()
+
+        except Exception as e:
+            self.logger.error(f"Error exporting connections to CSV: {e}")
+            return None
+
+    async def export_alerts_to_csv(self, filters=None):
+        """Export alerts to CSV format"""
+        try:
+            alerts = await self.get_filtered_alerts(filters, limit=10000)
+
+            if not alerts:
+                return None
+
+            import csv
+            import io
+
+            output = io.StringIO()
+            writer = csv.DictWriter(output, fieldnames=alerts[0].keys())
+            writer.writeheader()
+            writer.writerows(alerts)
+
+            return output.getvalue()
+
+        except Exception as e:
+            self.logger.error(f"Error exporting alerts to CSV: {e}")
+            return None
+
+    async def get_attack_timeline(self, hours=24):
+        """Get attack timeline data for visualization"""
+        try:
+            since = datetime.now() - timedelta(hours=hours)
+
+            async with aiosqlite.connect(self.db_path) as db:
+                cursor = await db.execute("""
+                    SELECT
+                        strftime('%Y-%m-%d %H:00:00', timestamp) as hour,
+                        COUNT(*) as connection_count,
+                        COUNT(DISTINCT source_ip) as unique_ips,
+                        service_type
+                    FROM honeypot_connections
+                    WHERE timestamp >= ?
+                    GROUP BY hour, service_type
+                    ORDER BY hour
+                """, (since.isoformat(),))
+
+                rows = await cursor.fetchall()
+                timeline_data = []
+                for row in rows:
+                    timeline_data.append({
+                        'hour': row[0],
+                        'connection_count': row[1],
+                        'unique_ips': row[2],
+                        'service_type': row[3]
+                    })
+
+                return timeline_data
+
+        except Exception as e:
+            self.logger.error(f"Error getting attack timeline: {e}")
+            return []
+
+    async def get_threat_summary(self, hours=24):
+        """Get comprehensive threat summary"""
+        try:
+            since = datetime.now() - timedelta(hours=hours)
+
+            async with aiosqlite.connect(self.db_path) as db:
+                # Get connection summary
+                cursor = await db.execute("""
+                    SELECT
+                        COUNT(*) as total_connections,
+                        COUNT(DISTINCT source_ip) as unique_attackers,
+                        service_type
+                    FROM honeypot_connections
+                    WHERE timestamp >= ?
+                    GROUP BY service_type
+                """, (since.isoformat(),))
+
+                connection_summary = await cursor.fetchall()
+
+                # Get alert summary
+                cursor = await db.execute("""
+                    SELECT
+                        COUNT(*) as total_alerts,
+                        severity,
+                        alert_type
+                    FROM ids_alerts
+                    WHERE timestamp >= ?
+                    GROUP BY severity, alert_type
+                """, (since.isoformat(),))
+
+                alert_summary = await cursor.fetchall()
+
+                return {
+                    'connections': [dict(zip(['total_connections', 'unique_attackers', 'service_type'], row))
+                                  for row in connection_summary],
+                    'alerts': [dict(zip(['total_alerts', 'severity', 'alert_type'], row))
+                             for row in alert_summary],
+                    'period_hours': hours,
+                    'generated_at': datetime.now().isoformat()
+                }
+
+        except Exception as e:
+            self.logger.error(f"Error getting threat summary: {e}")
+            return {'connections': [], 'alerts': [], 'period_hours': hours}
