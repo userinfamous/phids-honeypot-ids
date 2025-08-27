@@ -5,9 +5,11 @@ import asyncio
 import logging
 import json
 import urllib.parse
+import time
 from datetime import datetime
 from config import HONEYPOT_CONFIG
 from .base_honeypot import BaseHoneypot
+from ..core.enhanced_logger import EnhancedHoneypotLogger, ConnectionStatus, ServiceType
 
 
 class HTTPHoneypot(BaseHoneypot):
@@ -24,6 +26,8 @@ class HTTPHoneypot(BaseHoneypot):
             "/wp-admin": self.generate_wordpress_page(),
             "/robots.txt": "User-agent: *\nDisallow: /admin\nDisallow: /backup\nDisallow: /config"
         }
+        # Initialize enhanced logger
+        self.enhanced_logger = EnhancedHoneypotLogger("HTTP", self.logger)
         
     async def start(self):
         """Start the HTTP honeypot server"""
@@ -69,8 +73,15 @@ class HTTPHoneypot(BaseHoneypot):
         """Handle incoming HTTP connections"""
         session_id = self.generate_session_id()
         client_info = self.get_client_info(writer)
-        
-        self.logger.info(f"New HTTP connection from {client_info['source_ip']}:{client_info['source_port']} (session: {session_id})")
+
+        # Start enhanced connection logging
+        connection_log = self.enhanced_logger.start_connection_log(
+            session_id=session_id,
+            source_ip=client_info['source_ip'],
+            source_port=client_info['source_port'],
+            destination_port=self.config['port'],
+            service_type=ServiceType.HTTP
+        )
         
         # Store connection info with proper timestamp
         start_time = datetime.now()
@@ -84,7 +95,9 @@ class HTTPHoneypot(BaseHoneypot):
             'timestamp': start_time,  # Explicit timestamp for database logging
             'commands': [],
             'payloads': [],
-            'connection_data': {}
+            'connection_data': {},
+            'connection_status': 'FAILED',  # Default to FAILED, will be updated if successful
+            'failure_reason': 'Connection in progress'
         }
         
         self.active_connections[session_id] = {
@@ -93,33 +106,97 @@ class HTTPHoneypot(BaseHoneypot):
             'data': connection_data
         }
         
+        connection_status = ConnectionStatus.FAILED
+        failure_reason = None
+
         try:
-            await self.handle_http_request(reader, writer, connection_data)
+            # Attempt HTTP request handling
+            request_result = await self.handle_http_request(reader, writer, connection_data)
+
+            if request_result.get('success', False):
+                connection_status = ConnectionStatus.SUCCESS
+            elif request_result.get('timeout', False):
+                connection_status = ConnectionStatus.TIMEOUT
+                failure_reason = "Request timeout"
+            else:
+                connection_status = ConnectionStatus.FAILED
+                failure_reason = request_result.get('reason', "Request processing failed")
+
+        except asyncio.TimeoutError:
+            connection_status = ConnectionStatus.TIMEOUT
+            failure_reason = "Connection timeout"
+            self.logger.warning(f"HTTP connection {session_id} timed out")
+        except ConnectionResetError:
+            connection_status = ConnectionStatus.FAILED
+            failure_reason = "Connection reset by client"
+            self.logger.info(f"HTTP connection {session_id} reset by client")
         except Exception as e:
+            connection_status = ConnectionStatus.ERROR
+            failure_reason = f"Protocol error: {str(e)}"
             self.logger.error(f"Error handling HTTP connection {session_id}: {e}")
         finally:
-            # Log the complete session
+            # End enhanced logging with outcome
+            enhanced_log = self.enhanced_logger.end_connection_log(
+                session_id=session_id,
+                status=connection_status,
+                reason=failure_reason
+            )
+
+            # Log the complete session (existing system)
             connection_data['end_time'] = datetime.now()
             connection_data['duration'] = (connection_data['end_time'] - connection_data['start_time']).total_seconds()
+
+            # Add enhanced logging data to connection_data for database
+            if enhanced_log:
+                connection_data['connection_status'] = connection_status.value
+                connection_data['failure_reason'] = failure_reason
+                connection_data['enhanced_log'] = enhanced_log.to_dict()
+
             await self.log_connection(connection_data)
             await self.close_connection(writer, session_id)
     
     async def handle_http_request(self, reader, writer, connection_data):
         """Handle HTTP request"""
+        request_result = {'success': False, 'timeout': False, 'reason': None}
+
         try:
-            # Read HTTP request
-            request_data = await self.read_data(reader, 8192)
+            # Read HTTP request with timeout
+            request_data = await asyncio.wait_for(
+                self.read_data(reader, 8192),
+                timeout=30.0
+            )
+
             if not request_data:
-                return
-            
+                request_result['reason'] = "No request data received"
+                return request_result
+
             request_str = request_data.decode('utf-8', errors='ignore')
-            
+
             # Parse HTTP request
             request_info = self.parse_http_request(request_str)
             request_info['source_ip'] = connection_data['source_ip']  # Add source IP for attack analysis
 
             # Enhanced attack detection
             attack_details = self.detect_attack_patterns_enhanced(request_info)
+
+            # Log HTTP request with enhanced logger
+            user_agent = request_info['headers'].get('User-Agent', 'Unknown')
+            query_params = {}
+            if '?' in request_info['path']:
+                path_parts = request_info['path'].split('?', 1)
+                if len(path_parts) > 1:
+                    query_params = dict(urllib.parse.parse_qsl(path_parts[1]))
+
+            self.enhanced_logger.log_http_request(
+                session_id=connection_data['session_id'],
+                method=request_info['method'],
+                path=request_info['path'],
+                user_agent=user_agent,
+                headers=request_info['headers'],
+                query_params=query_params,
+                body_size=len(request_info.get('body', '')),
+                attack_vectors=attack_details['attack_vectors']
+            )
 
             # Log request details with attack information
             request_log = {
@@ -165,11 +242,14 @@ class HTTPHoneypot(BaseHoneypot):
 
             # Generate response
             response = self.generate_http_response(request_info)
-            
+
             # Send response
             writer.write(response.encode())
             await writer.drain()
-            
+
+            # Mark request as successful
+            request_result['success'] = True
+
             # Check for additional requests (keep-alive)
             if request_info['headers'].get('Connection', '').lower() == 'keep-alive':
                 # Handle additional requests
@@ -197,11 +277,16 @@ class HTTPHoneypot(BaseHoneypot):
                     writer.write(additional_response.encode())
                     await writer.drain()
             
+            return request_result
+
         except asyncio.TimeoutError:
-            # Normal timeout for keep-alive connections
-            pass
+            request_result['timeout'] = True
+            request_result['reason'] = "Request timeout"
+            return request_result
         except Exception as e:
+            request_result['reason'] = f"Request processing error: {str(e)}"
             self.logger.error(f"HTTP request handling error: {e}")
+            return request_result
     
     def parse_http_request(self, request_str):
         """Parse HTTP request string"""

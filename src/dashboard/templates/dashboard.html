@@ -89,13 +89,77 @@
             background: white;
             border-radius: 5px;
         }
-        
+
         .log-entry.alert {
             border-left-color: #dc3545;
         }
-        
+
         .log-entry.connection {
             border-left-color: #28a745;
+        }
+
+        /* Enhanced connection status styling */
+        .log-entry.connection.success {
+            border-left-color: #28a745;
+            background-color: #f8fff9;
+        }
+
+        .log-entry.connection.failed {
+            border-left-color: #dc3545;
+            background-color: #fff8f8;
+        }
+
+        .log-entry.connection.error {
+            border-left-color: #fd7e14;
+            background-color: #fff9f5;
+        }
+
+        .log-entry.connection.timeout {
+            border-left-color: #ffc107;
+            background-color: #fffdf5;
+        }
+
+        .connection-status {
+            display: inline-block;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 0.75em;
+            font-weight: bold;
+            text-transform: uppercase;
+        }
+
+        .status-success {
+            background-color: #d4edda;
+            color: #155724;
+        }
+
+        .status-failed {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+
+        .status-error {
+            background-color: #ffeaa7;
+            color: #856404;
+        }
+
+        .status-timeout {
+            background-color: #fff3cd;
+            color: #856404;
+        }
+
+        .connection-details {
+            font-size: 0.85em;
+            color: #6c757d;
+            margin-top: 4px;
+        }
+
+        .auth-attempts {
+            background-color: #e9ecef;
+            padding: 4px 8px;
+            border-radius: 3px;
+            margin-top: 4px;
+            font-size: 0.8em;
         }
         
         .timestamp {
@@ -508,12 +572,62 @@
 
                 let content = '';
                 if (type === 'connection') {
+                    // Determine connection status and styling
+                    const connectionStatus = data.connection_status || 'FAILED';
+                    const statusClass = connectionStatus.toLowerCase();
+                    const duration = data.duration ? `${data.duration.toFixed(1)}s` : '0.0s';
+
+                    // Add status-specific class to entry
+                    entry.className += ` ${statusClass}`;
+
+                    // Build enhanced connection display
+                    let statusBadge = `<span class="connection-status status-${statusClass}">${connectionStatus}</span>`;
+                    let serviceInfo = `${data.service_type?.toUpperCase() || 'UNKNOWN'}:${data.destination_port}`;
+
                     content = `
-                        <strong>New Connection</strong> from ${data.source_ip}
-                        <br>
-                        <small>Service: ${data.service_type} | Port: ${data.destination_port}</small>
+                        <div>
+                            <strong>${serviceInfo} Connection</strong> from ${data.source_ip}:${data.source_port} ${statusBadge}
+                        </div>
+                        <div class="connection-details">
+                            Duration: ${duration}
+                    `;
+
+                    // Add service-specific details
+                    if (data.enhanced_log) {
+                        const enhanced = data.enhanced_log;
+
+                        // SSH-specific details
+                        if (data.service_type === 'ssh' && enhanced.authentication_attempts && enhanced.authentication_attempts.length > 0) {
+                            const authAttempts = enhanced.authentication_attempts;
+                            const lastAuth = authAttempts[authAttempts.length - 1];
+                            content += ` | Auth: ${lastAuth.username}:${lastAuth.password} (${authAttempts.length} attempts)`;
+                        }
+
+                        // HTTP-specific details
+                        if ((data.service_type === 'http' || data.service_type === 'https') && enhanced.http_details) {
+                            const http = enhanced.http_details;
+                            content += ` | ${http.method} ${http.path}`;
+                            if (http.user_agent && http.user_agent !== 'Unknown') {
+                                content += ` | UA: ${http.user_agent.substring(0, 50)}${http.user_agent.length > 50 ? '...' : ''}`;
+                            }
+                        }
+
+                        // Commands executed
+                        if (enhanced.commands_executed && enhanced.commands_executed.length > 0) {
+                            content += ` | Commands: ${enhanced.commands_executed.length}`;
+                        }
+                    }
+
+                    // Add failure reason if applicable
+                    if (connectionStatus !== 'SUCCESS' && data.failure_reason) {
+                        content += ` | Reason: ${data.failure_reason}`;
+                    }
+
+                    content += `
+                        </div>
                         <div class="timestamp">${timestamp}</div>
                     `;
+
                 } else if (type === 'alert') {
                     content = `
                         <strong>Security Alert</strong> - ${data.alert_type}
