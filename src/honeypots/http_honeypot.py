@@ -116,20 +116,53 @@ class HTTPHoneypot(BaseHoneypot):
             
             # Parse HTTP request
             request_info = self.parse_http_request(request_str)
-            
-            # Log request details
-            connection_data['commands'].append({
+            request_info['source_ip'] = connection_data['source_ip']  # Add source IP for attack analysis
+
+            # Enhanced attack detection
+            attack_details = self.detect_attack_patterns_enhanced(request_info)
+
+            # Log request details with attack information
+            request_log = {
                 'method': request_info['method'],
                 'path': request_info['path'],
                 'headers': request_info['headers'],
                 'body': request_info['body'],
-                'timestamp': datetime.now().isoformat()
-            })
-            
+                'timestamp': datetime.now().isoformat(),
+                'attack_vectors': attack_details['attack_vectors'],
+                'payloads': attack_details['payloads'],
+                'severity': attack_details['severity'],
+                'attack_type': attack_details['primary_attack_type']
+            }
+
+            connection_data['commands'].append(request_log)
+            connection_data['payloads'].extend(attack_details['payloads'])
             connection_data['user_agent'] = request_info['headers'].get('User-Agent', 'Unknown')
-            
-            self.logger.info(f"HTTP {request_info['method']} {request_info['path']} from {connection_data['source_ip']}")
-            
+
+            # Enhanced logging with attack details
+            if attack_details['attack_vectors']:
+                self.logger.warning(f"ATTACK DETECTED: {attack_details['primary_attack_type']} from {connection_data['source_ip']} - {attack_details['description']}")
+                self.logger.info(f"Attack vectors: {', '.join(attack_details['attack_vectors'])}")
+                self.logger.info(f"Payloads: {', '.join(attack_details['payloads'])}")
+                self.logger.info(f"Severity: {attack_details['severity']}")
+                self.logger.info(f"Recommendations: {'; '.join(attack_details['recommendations'])}")
+            else:
+                self.logger.info(f"HTTP {request_info['method']} {request_info['path']} from {connection_data['source_ip']}")
+
+            # Store enhanced connection data
+            connection_data['connection_data'] = {
+                'method': request_info['method'],
+                'path': request_info['path'],
+                'user_agent': connection_data['user_agent'],
+                'attack_summary': {
+                    'attack_type': attack_details['primary_attack_type'],
+                    'severity': attack_details['severity'],
+                    'vectors_count': len(attack_details['attack_vectors']),
+                    'payloads_count': len(attack_details['payloads']),
+                    'description': attack_details['description'],
+                    'recommendations': attack_details['recommendations']
+                }
+            }
+
             # Generate response
             response = self.generate_http_response(request_info)
             
@@ -285,7 +318,173 @@ class HTTPHoneypot(BaseHoneypot):
                 return True
         
         return False
-    
+
+    def detect_attack_patterns_enhanced(self, request_info):
+        """Enhanced attack pattern detection with detailed analysis"""
+        path = request_info['path'].lower()
+        body = request_info['body'].lower()
+        headers = {k.lower(): v.lower() for k, v in request_info.get('headers', {}).items()}
+        user_agent = headers.get('user-agent', '')
+
+        attack_details = {
+            'attack_vectors': [],
+            'payloads': [],
+            'severity': 'low',
+            'primary_attack_type': 'reconnaissance',
+            'description': 'Basic web request',
+            'recommendations': [],
+            'source_ip': request_info.get('source_ip', 'unknown')
+        }
+
+        # SQL injection patterns with severity
+        sql_patterns = {
+            'union select': {'severity': 'high', 'description': 'SQL Union injection attempt'},
+            'or 1=1': {'severity': 'high', 'description': 'SQL boolean injection'},
+            'drop table': {'severity': 'critical', 'description': 'SQL table deletion attempt'},
+            'insert into': {'severity': 'high', 'description': 'SQL data insertion attempt'},
+            'delete from': {'severity': 'high', 'description': 'SQL data deletion attempt'},
+            "' or '": {'severity': 'medium', 'description': 'SQL quote injection'},
+            'waitfor delay': {'severity': 'high', 'description': 'SQL time-based injection'},
+            'information_schema': {'severity': 'high', 'description': 'SQL schema enumeration'}
+        }
+
+        # XSS patterns with severity
+        xss_patterns = {
+            '<script': {'severity': 'high', 'description': 'JavaScript injection attempt'},
+            'javascript:': {'severity': 'medium', 'description': 'JavaScript protocol injection'},
+            'onerror=': {'severity': 'high', 'description': 'Event handler XSS'},
+            'onload=': {'severity': 'high', 'description': 'Onload event XSS'},
+            'alert(': {'severity': 'medium', 'description': 'Alert-based XSS test'},
+            '<img src=x': {'severity': 'high', 'description': 'Image-based XSS'},
+            '<svg onload': {'severity': 'high', 'description': 'SVG-based XSS'}
+        }
+
+        # Directory traversal patterns
+        traversal_patterns = {
+            '../': {'severity': 'high', 'description': 'Directory traversal attempt'},
+            '..\\': {'severity': 'high', 'description': 'Windows directory traversal'},
+            '%2e%2e%2f': {'severity': 'high', 'description': 'URL-encoded traversal'},
+            '%2e%2e%5c': {'severity': 'high', 'description': 'URL-encoded Windows traversal'},
+            '/etc/passwd': {'severity': 'critical', 'description': 'Linux password file access'},
+            '/windows/system32': {'severity': 'critical', 'description': 'Windows system access'}
+        }
+
+        # Command injection patterns
+        command_patterns = {
+            ';cat ': {'severity': 'critical', 'description': 'Command injection - file reading'},
+            '|whoami': {'severity': 'high', 'description': 'Command injection - user enumeration'},
+            '&dir': {'severity': 'high', 'description': 'Command injection - directory listing'},
+            '`ls': {'severity': 'high', 'description': 'Command injection - backtick execution'},
+            '$(': {'severity': 'high', 'description': 'Command injection - subshell execution'},
+            '; ps aux': {'severity': 'high', 'description': 'Command injection - process enumeration'}
+        }
+
+        # Check SQL injection
+        for pattern, info in sql_patterns.items():
+            if pattern in path or pattern in body:
+                attack_details['attack_vectors'].append(f"SQL Injection: {info['description']}")
+                attack_details['payloads'].append(pattern)
+                attack_details['primary_attack_type'] = 'sql_injection'
+                attack_details['severity'] = self._max_severity(attack_details['severity'], info['severity'])
+                attack_details['description'] = info['description']
+
+        # Check XSS
+        for pattern, info in xss_patterns.items():
+            if pattern in path or pattern in body:
+                attack_details['attack_vectors'].append(f"XSS: {info['description']}")
+                attack_details['payloads'].append(pattern)
+                if attack_details['primary_attack_type'] == 'reconnaissance':
+                    attack_details['primary_attack_type'] = 'xss'
+                attack_details['severity'] = self._max_severity(attack_details['severity'], info['severity'])
+                if 'XSS' not in attack_details['description']:
+                    attack_details['description'] = info['description']
+
+        # Check directory traversal
+        for pattern, info in traversal_patterns.items():
+            if pattern in path or pattern in body:
+                attack_details['attack_vectors'].append(f"Directory Traversal: {info['description']}")
+                attack_details['payloads'].append(pattern)
+                if attack_details['primary_attack_type'] == 'reconnaissance':
+                    attack_details['primary_attack_type'] = 'directory_traversal'
+                attack_details['severity'] = self._max_severity(attack_details['severity'], info['severity'])
+                if 'traversal' not in attack_details['description'].lower():
+                    attack_details['description'] = info['description']
+
+        # Check command injection
+        for pattern, info in command_patterns.items():
+            if pattern in path or pattern in body:
+                attack_details['attack_vectors'].append(f"Command Injection: {info['description']}")
+                attack_details['payloads'].append(pattern)
+                if attack_details['primary_attack_type'] in ['reconnaissance', 'xss']:
+                    attack_details['primary_attack_type'] = 'command_injection'
+                attack_details['severity'] = self._max_severity(attack_details['severity'], info['severity'])
+                if 'command' not in attack_details['description'].lower():
+                    attack_details['description'] = info['description']
+
+        # Generate recommendations based on detected attacks
+        if attack_details['attack_vectors']:
+            attack_details['recommendations'] = self.generate_security_recommendations(attack_details)
+
+        return attack_details
+
+    def _max_severity(self, current, new):
+        """Compare severity levels and return the higher one"""
+        severity_order = ['low', 'medium', 'high', 'critical']
+        current_idx = severity_order.index(current) if current in severity_order else 0
+        new_idx = severity_order.index(new) if new in severity_order else 0
+        return severity_order[max(current_idx, new_idx)]
+
+    def generate_security_recommendations(self, attack_details):
+        """Generate actionable security recommendations"""
+        recommendations = []
+
+        if attack_details['primary_attack_type'] == 'sql_injection':
+            recommendations.extend([
+                "Implement parameterized queries/prepared statements",
+                "Enable SQL injection detection in WAF",
+                "Validate and sanitize all user inputs",
+                "Use least privilege database accounts",
+                "Monitor database access logs"
+            ])
+
+        if attack_details['primary_attack_type'] == 'xss':
+            recommendations.extend([
+                "Implement Content Security Policy (CSP)",
+                "Encode output data before rendering",
+                "Validate and sanitize user inputs",
+                "Use XSS protection headers",
+                "Implement input validation on client and server"
+            ])
+
+        if attack_details['primary_attack_type'] == 'directory_traversal':
+            recommendations.extend([
+                "Implement proper file path validation",
+                "Use chroot jails or sandboxing",
+                "Restrict file system access permissions",
+                "Validate file names and paths",
+                "Monitor file access attempts"
+            ])
+
+        if attack_details['primary_attack_type'] == 'command_injection':
+            recommendations.extend([
+                "Avoid system command execution with user input",
+                "Use parameterized APIs instead of shell commands",
+                "Implement strict input validation",
+                "Use application sandboxing",
+                "Monitor system command execution"
+            ])
+
+        # General recommendations for high/critical severity
+        if attack_details['severity'] in ['high', 'critical']:
+            recommendations.extend([
+                f"IMMEDIATE ACTION: Block source IP {attack_details.get('source_ip', 'unknown')}",
+                "Review and update security policies",
+                "Conduct security audit of affected systems",
+                "Implement rate limiting and DDoS protection"
+            ])
+
+        return recommendations[:5]  # Limit to top 5 recommendations
+
     def generate_success_response(self, content, content_type="text/html"):
         """Generate successful HTTP response"""
         response = f"""HTTP/1.1 200 OK\r

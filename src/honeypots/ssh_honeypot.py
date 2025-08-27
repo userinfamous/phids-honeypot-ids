@@ -71,7 +71,7 @@ class SSHHoneypot(BaseHoneypot):
         
         self.logger.info(f"New SSH connection from {client_info['source_ip']}:{client_info['source_port']} (session: {session_id})")
         
-        # Store connection info with proper timestamp
+        # Store connection info with proper timestamp and enhanced metadata
         start_time = datetime.now()
         connection_data = {
             'session_id': session_id,
@@ -83,7 +83,21 @@ class SSHHoneypot(BaseHoneypot):
             'timestamp': start_time,  # Explicit timestamp for database logging
             'commands': [],
             'payloads': [],
-            'connection_data': {}
+            'connection_data': {
+                'connection_type': 'ssh_attempt',
+                'client_version': 'unknown',
+                'authentication_attempts': 0,
+                'successful_commands': 0,
+                'failed_commands': 0,
+                'attack_indicators': [],
+                'session_duration': 0,
+                'bytes_transferred': 0,
+                'suspicious_activity': False,
+                'attack_classification': 'reconnaissance',
+                'severity': 'low',
+                'recommendations': []
+            },
+            'user_agent': f"SSH-Client-{client_info['source_ip']}"
         }
         
         self.active_connections[session_id] = {
@@ -302,3 +316,99 @@ class SSHHoneypot(BaseHoneypot):
             return None
         
         return responses.get(command, f"bash: {command}: command not found")
+
+    def analyze_ssh_command(self, command, connection_data):
+        """Analyze SSH command for attack patterns and suspicious activity"""
+        command_lower = command.lower().strip()
+
+        attack_indicators = []
+        severity = 'low'
+        attack_type = 'reconnaissance'
+        recommendations = []
+
+        # Reconnaissance commands
+        recon_commands = {
+            'whoami': {'severity': 'low', 'type': 'reconnaissance', 'desc': 'User enumeration'},
+            'id': {'severity': 'low', 'type': 'reconnaissance', 'desc': 'User ID enumeration'},
+            'uname -a': {'severity': 'medium', 'type': 'reconnaissance', 'desc': 'System information gathering'},
+            'cat /etc/passwd': {'severity': 'high', 'type': 'reconnaissance', 'desc': 'Password file access attempt'},
+            'ps aux': {'severity': 'medium', 'type': 'reconnaissance', 'desc': 'Process enumeration'},
+            'netstat -an': {'severity': 'medium', 'type': 'reconnaissance', 'desc': 'Network service enumeration'},
+            'ls -la': {'severity': 'low', 'type': 'reconnaissance', 'desc': 'Directory listing'},
+            'pwd': {'severity': 'low', 'type': 'reconnaissance', 'desc': 'Current directory check'}
+        }
+
+        # Malicious command patterns
+        malicious_patterns = {
+            'rm -rf': {'severity': 'critical', 'type': 'destruction', 'desc': 'File deletion attempt'},
+            'wget': {'severity': 'high', 'type': 'download', 'desc': 'File download attempt'},
+            'curl': {'severity': 'high', 'type': 'download', 'desc': 'File download attempt'},
+            'chmod +x': {'severity': 'high', 'type': 'execution', 'desc': 'File permission modification'},
+            'crontab': {'severity': 'high', 'type': 'persistence', 'desc': 'Scheduled task creation'},
+            'nohup': {'severity': 'high', 'type': 'persistence', 'desc': 'Background process execution'},
+            'nc -l': {'severity': 'critical', 'type': 'backdoor', 'desc': 'Netcat listener setup'},
+            'python -c': {'severity': 'high', 'type': 'execution', 'desc': 'Python code execution'},
+            'bash -i': {'severity': 'high', 'type': 'shell', 'desc': 'Interactive shell spawn'},
+            '/bin/sh': {'severity': 'high', 'type': 'shell', 'desc': 'Shell execution'},
+            'sudo': {'severity': 'high', 'type': 'privilege_escalation', 'desc': 'Privilege escalation attempt'}
+        }
+
+        # Check for exact command matches
+        if command_lower in recon_commands:
+            info = recon_commands[command_lower]
+            attack_indicators.append(f"Reconnaissance: {info['desc']}")
+            severity = info['severity']
+            attack_type = info['type']
+
+        # Check for malicious patterns
+        for pattern, info in malicious_patterns.items():
+            if pattern in command_lower:
+                attack_indicators.append(f"Malicious Activity: {info['desc']}")
+                severity = self._max_severity_ssh(severity, info['severity'])
+                attack_type = info['type']
+
+        # Additional suspicious patterns
+        if any(char in command for char in ['|', ';', '&&', '||']):
+            attack_indicators.append("Command chaining detected")
+            severity = self._max_severity_ssh(severity, 'medium')
+
+        if any(pattern in command_lower for pattern in ['base64', 'echo', 'printf']):
+            attack_indicators.append("Potential obfuscation detected")
+            severity = self._max_severity_ssh(severity, 'medium')
+
+        # Generate recommendations
+        if attack_type == 'reconnaissance':
+            recommendations = [
+                "Monitor for follow-up attacks from this IP",
+                "Implement rate limiting for SSH connections",
+                "Consider blocking reconnaissance attempts"
+            ]
+        elif attack_type in ['destruction', 'backdoor']:
+            recommendations = [
+                f"IMMEDIATE: Block IP {connection_data['source_ip']}",
+                "Conduct security audit of SSH access",
+                "Review and strengthen SSH security policies",
+                "Monitor for lateral movement attempts"
+            ]
+        elif attack_type in ['download', 'execution']:
+            recommendations = [
+                "Monitor network traffic for malware downloads",
+                "Scan systems for unauthorized files",
+                "Review file integrity monitoring alerts",
+                "Consider implementing application whitelisting"
+            ]
+
+        return {
+            'attack_indicators': attack_indicators,
+            'severity': severity,
+            'attack_type': attack_type,
+            'recommendations': recommendations,
+            'suspicious': len(attack_indicators) > 0
+        }
+
+    def _max_severity_ssh(self, current, new):
+        """Compare severity levels and return the higher one"""
+        severity_order = ['low', 'medium', 'high', 'critical']
+        current_idx = severity_order.index(current) if current in severity_order else 0
+        new_idx = severity_order.index(new) if new in severity_order else 0
+        return severity_order[max(current_idx, new_idx)]
