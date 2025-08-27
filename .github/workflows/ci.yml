@@ -34,7 +34,7 @@ jobs:
 
     - name: Run basic tests
       run: |
-        python -m pytest test_phids.py test_dashboard.py test_main.py -v --tb=short
+        python -m pytest tests/ -v --tb=short
 
     - name: Test database initialization
       run: |
