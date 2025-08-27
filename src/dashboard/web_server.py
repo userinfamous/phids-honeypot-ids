@@ -331,15 +331,34 @@ class DashboardWebServer:
             if websocket in self.active_connections:
                 self.active_connections.remove(websocket)
 
-    async def broadcast_event(self, event_data):
-        """Broadcast event to all connected WebSocket clients"""
+    async def broadcast_event(self, event_type_or_data, data=None):
+        """Broadcast event to all connected WebSocket clients
+
+        Args:
+            event_type_or_data: Either event type string (when data is provided) or complete event data dict
+            data: Event data (when first parameter is event type)
+        """
         if not self.active_connections:
             return
+
+        # Handle both calling patterns:
+        # 1. broadcast_event(event_type, data) - from event_broadcaster
+        # 2. broadcast_event(event_data) - from clear_logs
+        if data is not None:
+            # Called with event_type and data separately
+            event_message = {
+                "type": event_type_or_data,
+                "data": data,
+                "timestamp": datetime.now().isoformat()
+            }
+        else:
+            # Called with complete event data
+            event_message = event_type_or_data
 
         disconnected = []
         for websocket in self.active_connections:
             try:
-                await websocket.send_json(event_data)
+                await websocket.send_json(event_message)
             except Exception as e:
                 self.logger.error(f"Error broadcasting to WebSocket: {e}")
                 disconnected.append(websocket)
