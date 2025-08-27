@@ -1,0 +1,85 @@
+version: '3.8'
+
+services:
+  phids:
+    build: .
+    container_name: phids-honeypot
+    restart: unless-stopped
+    
+    # Network configuration
+    ports:
+      - "2222:2222"  # SSH Honeypot
+      - "8080:8080"  # HTTP Honeypot
+      - "2121:2121"  # FTP Honeypot (if enabled)
+    
+    # Environment variables
+    environment:
+      - PYTHONUNBUFFERED=1
+      - VIRUSTOTAL_API_KEY=${VIRUSTOTAL_API_KEY:-}
+      - ABUSEIPDB_API_KEY=${ABUSEIPDB_API_KEY:-}
+    
+    # Volume mounts for persistence
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./reports:/app/reports
+      - ./config.py:/app/config.py:ro
+    
+    # Security settings
+    cap_add:
+      - NET_RAW  # Required for packet capture
+    
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+        reservations:
+          memory: 256M
+          cpus: '0.25'
+    
+    # Health check
+    healthcheck:
+      test: ["CMD", "python", "-c", "import sqlite3; sqlite3.connect('data/phids.db').close()"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    
+    # Logging configuration
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Optional: Web dashboard (if implemented)
+  # phids-dashboard:
+  #   build: 
+  #     context: .
+  #     dockerfile: Dockerfile.dashboard
+  #   container_name: phids-dashboard
+  #   restart: unless-stopped
+  #   ports:
+  #     - "5000:5000"
+  #   depends_on:
+  #     - phids
+  #   volumes:
+  #     - ./data:/app/data:ro
+  #     - ./reports:/app/reports:ro
+
+# Networks
+networks:
+  default:
+    name: phids-network
+    driver: bridge
+
+# Volumes for data persistence
+volumes:
+  phids-data:
+    driver: local
+  phids-logs:
+    driver: local
+  phids-reports:
+    driver: local

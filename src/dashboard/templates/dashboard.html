@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PHIDS Dashboard - Real-time Honeypot Monitoring</title>
+    
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Font Awesome -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    
+    <style>
+        body {
+            background-color: #f8f9fa;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        
+        .navbar {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .card {
+            border: none;
+            border-radius: 15px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            transition: transform 0.2s;
+        }
+        
+        .card:hover {
+            transform: translateY(-2px);
+        }
+        
+        .stat-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        
+        .alert-card {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            color: white;
+        }
+        
+        .connection-card {
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+            color: white;
+        }
+        
+        .ip-card {
+            background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);
+            color: white;
+        }
+        
+        .status-indicator {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 8px;
+        }
+        
+        .status-online { background-color: #28a745; }
+        .status-warning { background-color: #ffc107; }
+        .status-danger { background-color: #dc3545; }
+        
+        .chart-container {
+            position: relative;
+            height: 300px;
+        }
+        
+        .activity-log {
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        
+        .log-entry {
+            border-left: 4px solid #007bff;
+            padding: 10px;
+            margin: 5px 0;
+            background: white;
+            border-radius: 5px;
+        }
+        
+        .log-entry.alert {
+            border-left-color: #dc3545;
+        }
+        
+        .log-entry.connection {
+            border-left-color: #28a745;
+        }
+        
+        .timestamp {
+            font-size: 0.8em;
+            color: #6c757d;
+        }
+        
+        .pulse {
+            animation: pulse 2s infinite;
+        }
+        
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
+    </style>
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="navbar navbar-expand-lg navbar-dark">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="#">
+                <i class="fas fa-shield-alt me-2"></i>
+                PHIDS Dashboard
+            </a>
+            <div class="navbar-nav ms-auto">
+                <span class="navbar-text">
+                    <span class="status-indicator status-online pulse" id="connectionStatus"></span>
+                    <span id="connectionText">Connected</span>
+                </span>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container-fluid mt-4">
+        <!-- Statistics Cards -->
+        <div class="row mb-4">
+            <div class="col-md-3">
+                <div class="card stat-card">
+                    <div class="card-body text-center">
+                        <i class="fas fa-network-wired fa-2x mb-2"></i>
+                        <h3 class="card-title" id="totalConnections">0</h3>
+                        <p class="card-text">Total Connections (24h)</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card alert-card">
+                    <div class="card-body text-center">
+                        <i class="fas fa-exclamation-triangle fa-2x mb-2"></i>
+                        <h3 class="card-title" id="totalAlerts">0</h3>
+                        <p class="card-text">Security Alerts (24h)</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card connection-card">
+                    <div class="card-body text-center">
+                        <i class="fas fa-globe fa-2x mb-2"></i>
+                        <h3 class="card-title" id="uniqueIPs">0</h3>
+                        <p class="card-text">Unique IP Addresses</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card ip-card">
+                    <div class="card-body text-center">
+                        <i class="fas fa-clock fa-2x mb-2"></i>
+                        <h3 class="card-title" id="lastUpdate">--:--</h3>
+                        <p class="card-text">Last Update</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Charts Row -->
+        <div class="row mb-4">
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-header">
+                        <h5><i class="fas fa-chart-line me-2"></i>Hourly Activity</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="chart-container">
+                            <canvas id="activityChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-header">
+                        <h5><i class="fas fa-chart-pie me-2"></i>Service Breakdown</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="chart-container">
+                            <canvas id="serviceChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Activity and Alerts Row -->
+        <div class="row">
+            <div class="col-md-8">
+                <div class="card">
+                    <div class="card-header">
+                        <h5><i class="fas fa-list me-2"></i>Recent Activity</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="activity-log" id="activityLog">
+                            <div class="text-center text-muted">
+                                <i class="fas fa-spinner fa-spin"></i>
+                                Loading activity...
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card">
+                    <div class="card-header">
+                        <h5><i class="fas fa-users me-2"></i>Top Attackers</h5>
+                    </div>
+                    <div class="card-body">
+                        <div id="topAttackers">
+                            <div class="text-center text-muted">
+                                <i class="fas fa-spinner fa-spin"></i>
+                                Loading data...
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    
+    <script>
+        // Dashboard JavaScript
+        class PHIDSDashboard {
+            constructor() {
+                this.ws = null;
+                this.charts = {};
+                this.reconnectAttempts = 0;
+                this.maxReconnectAttempts = 5;
+
+                this.initializeCharts();
+                this.connectWebSocket();
+                this.loadInitialData();
+            }
+
+            initializeCharts() {
+                // Activity Chart
+                const activityCtx = document.getElementById('activityChart').getContext('2d');
+                this.charts.activity = new Chart(activityCtx, {
+                    type: 'line',
+                    data: {
+                        labels: [],
+                        datasets: [{
+                            label: 'Connections',
+                            data: [],
+                            borderColor: '#667eea',
+                            backgroundColor: 'rgba(102, 126, 234, 0.1)',
+                            tension: 0.4
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        scales: {
+                            y: {
+                                beginAtZero: true
+                            }
+                        }
+                    }
+                });
+
+                // Service Chart
+                const serviceCtx = document.getElementById('serviceChart').getContext('2d');
+                this.charts.service = new Chart(serviceCtx, {
+                    type: 'doughnut',
+                    data: {
+                        labels: ['SSH', 'HTTP'],
+                        datasets: [{
+                            data: [0, 0],
+                            backgroundColor: ['#667eea', '#764ba2']
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false
+                    }
+                });
+            }
+
+            connectWebSocket() {
+                const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                const wsUrl = `${protocol}//${window.location.host}/ws`;
+
+                this.ws = new WebSocket(wsUrl);
+
+                this.ws.onopen = () => {
+                    console.log('WebSocket connected');
+                    this.updateConnectionStatus(true);
+                    this.reconnectAttempts = 0;
+                };
+
+                this.ws.onmessage = (event) => {
+                    const message = JSON.parse(event.data);
+                    this.handleWebSocketMessage(message);
+                };
+
+                this.ws.onclose = () => {
+                    console.log('WebSocket disconnected');
+                    this.updateConnectionStatus(false);
+                    this.attemptReconnect();
+                };
+
+                this.ws.onerror = (error) => {
+                    console.error('WebSocket error:', error);
+                    this.updateConnectionStatus(false);
+                };
+            }
+
+            attemptReconnect() {
+                if (this.reconnectAttempts < this.maxReconnectAttempts) {
+                    this.reconnectAttempts++;
+                    setTimeout(() => {
+                        console.log(`Reconnection attempt ${this.reconnectAttempts}`);
+                        this.connectWebSocket();
+                    }, 5000 * this.reconnectAttempts);
+                }
+            }
+
+            handleWebSocketMessage(message) {
+                switch (message.type) {
+                    case 'stats_update':
+                        this.updateStats(message.data);
+                        break;
+                    case 'new_connection':
+                        this.addActivityEntry(message.data, 'connection');
+                        break;
+                    case 'new_alert':
+                        this.addActivityEntry(message.data, 'alert');
+                        break;
+                }
+            }
+
+            updateConnectionStatus(connected) {
+                const indicator = document.getElementById('connectionStatus');
+                const text = document.getElementById('connectionText');
+
+                if (connected) {
+                    indicator.className = 'status-indicator status-online pulse';
+                    text.textContent = 'Connected';
+                } else {
+                    indicator.className = 'status-indicator status-danger';
+                    text.textContent = 'Disconnected';
+                }
+            }
+
+            updateStats(stats) {
+                document.getElementById('totalConnections').textContent = stats.total_connections || 0;
+                document.getElementById('totalAlerts').textContent = stats.total_alerts || 0;
+                document.getElementById('uniqueIPs').textContent = stats.unique_ips || 0;
+
+                const lastUpdate = new Date(stats.last_updated);
+                document.getElementById('lastUpdate').textContent = lastUpdate.toLocaleTimeString();
+
+                // Update charts
+                this.updateActivityChart(stats.hourly_activity || []);
+                this.updateServiceChart(stats.service_breakdown || {});
+                this.updateTopAttackers(stats.top_attackers || []);
+            }
+
+            updateActivityChart(hourlyData) {
+                const labels = hourlyData.map(item => `${item.hour}:00`);
+                const data = hourlyData.map(item => item.count);
+
+                this.charts.activity.data.labels = labels;
+                this.charts.activity.data.datasets[0].data = data;
+                this.charts.activity.update();
+            }
+
+            updateServiceChart(serviceData) {
+                const data = [serviceData.ssh || 0, serviceData.http || 0];
+                this.charts.service.data.datasets[0].data = data;
+                this.charts.service.update();
+            }
+
+            updateTopAttackers(attackers) {
+                const container = document.getElementById('topAttackers');
+
+                if (attackers.length === 0) {
+                    container.innerHTML = '<div class="text-muted">No attackers detected</div>';
+                    return;
+                }
+
+                const html = attackers.map((attacker, index) => `
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <div>
+                            <strong>${attacker.ip}</strong>
+                            <br>
+                            <small class="text-muted">${attacker.country || 'Unknown'}</small>
+                        </div>
+                        <span class="badge bg-danger">${attacker.count}</span>
+                    </div>
+                `).join('');
+
+                container.innerHTML = html;
+            }
+
+            addActivityEntry(data, type) {
+                const log = document.getElementById('activityLog');
+                const timestamp = new Date().toLocaleTimeString();
+
+                const entry = document.createElement('div');
+                entry.className = `log-entry ${type}`;
+
+                let content = '';
+                if (type === 'connection') {
+                    content = `
+                        <strong>New Connection</strong> from ${data.source_ip}
+                        <br>
+                        <small>Service: ${data.service_type} | Port: ${data.destination_port}</small>
+                        <div class="timestamp">${timestamp}</div>
+                    `;
+                } else if (type === 'alert') {
+                    content = `
+                        <strong>Security Alert</strong> - ${data.alert_type}
+                        <br>
+                        <small>${data.description}</small>
+                        <div class="timestamp">${timestamp}</div>
+                    `;
+                }
+
+                entry.innerHTML = content;
+                log.insertBefore(entry, log.firstChild);
+
+                // Keep only last 20 entries
+                while (log.children.length > 20) {
+                    log.removeChild(log.lastChild);
+                }
+            }
+
+            async loadInitialData() {
+                try {
+                    // Load initial stats
+                    const statsResponse = await fetch('/api/stats');
+                    const stats = await statsResponse.json();
+                    this.updateStats(stats);
+
+                    // Load recent connections
+                    const connectionsResponse = await fetch('/api/recent-connections');
+                    const connections = await connectionsResponse.json();
+                    this.loadRecentConnections(connections.connections || []);
+
+                    // Load recent alerts
+                    const alertsResponse = await fetch('/api/alerts');
+                    const alerts = await alertsResponse.json();
+                    this.loadRecentAlerts(alerts.alerts || []);
+
+                } catch (error) {
+                    console.error('Error loading initial data:', error);
+                }
+            }
+
+            loadRecentConnections(connections) {
+                const log = document.getElementById('activityLog');
+                log.innerHTML = '';
+
+                connections.slice(0, 10).forEach(conn => {
+                    this.addActivityEntry(conn, 'connection');
+                });
+            }
+
+            loadRecentAlerts(alerts) {
+                alerts.slice(0, 5).forEach(alert => {
+                    this.addActivityEntry(alert, 'alert');
+                });
+            }
+        }
+
+        // Initialize dashboard when page loads
+        document.addEventListener('DOMContentLoaded', () => {
+            new PHIDSDashboard();
+        });
+    </script>
+</body>
+</html>
