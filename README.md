@@ -518,13 +518,6 @@ This project demonstrates **professional-level software development** with:
 
 ---
 
-## 📞 **Contact & Professional Profile**
-
-**Developed by:** [Your Name]
-**LinkedIn:** [Your LinkedIn Profile]
-**GitHub:** [Your GitHub Profile]
-**Email:** [Your Professional Email]
-
 ### **Technical Expertise Demonstrated:**
 - ✅ **Python Development** - Advanced async programming, web frameworks
 - ✅ **Cybersecurity** - Threat detection, incident response, security analysis
