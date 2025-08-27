@@ -10,7 +10,7 @@ from jinja2 import Environment, FileSystemLoader
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 from collections import Counter, defaultdict
-import pandas as pd
+# pandas removed - not used in current implementation
 
 from config import REPORTS_DIR, REPORTING_CONFIG
 from src.core.database import DatabaseManager

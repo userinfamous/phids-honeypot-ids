@@ -5,8 +5,8 @@ paramiko>=3.3.1
 requests>=2.31.0
 
 # Data processing and analysis
-pandas>=2.1.0
-numpy>=1.24.0
+# pandas removed - not used in current implementation
+numpy>=1.21.0,<1.25.0  # Compatible with Python 3.8+
 
 # Database
 # sqlite3 is built-in with Python
