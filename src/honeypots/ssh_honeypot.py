@@ -89,7 +89,14 @@ class SSHHoneypot(BaseHoneypot):
             'writer': writer,
             'data': connection_data
         }
-        
+
+        # Log connection attempt immediately (before session simulation)
+        initial_log_data = connection_data.copy()
+        initial_log_data['connection_type'] = 'attempt'
+        initial_log_data['end_time'] = datetime.now()
+        initial_log_data['duration'] = 0
+        await self.log_connection(initial_log_data)
+
         try:
             await self.simulate_ssh_session(reader, writer, connection_data)
         except Exception as e:

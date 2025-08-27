@@ -7,6 +7,7 @@ import uuid
 from abc import ABC, abstractmethod
 from datetime import datetime
 from src.core.database import DatabaseManager
+from src.dashboard.event_broadcaster import event_broadcaster
 
 
 class BaseHoneypot(ABC):
@@ -41,10 +42,14 @@ class BaseHoneypot(ABC):
         pass
     
     async def log_connection(self, connection_data):
-        """Log connection data to database"""
+        """Log connection data to database and broadcast immediately"""
         try:
             await self.db_manager.log_connection(connection_data)
             self.logger.info(f"Logged connection from {connection_data.get('source_ip')}")
+
+            # Broadcast immediately for real-time updates
+            await event_broadcaster.broadcast_connection(connection_data)
+
         except Exception as e:
             self.logger.error(f"Failed to log connection: {e}")
     

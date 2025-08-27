@@ -313,7 +313,7 @@ class DashboardWebServer:
         try:
             while True:
                 # Send periodic updates
-                await asyncio.sleep(5)  # Update every 5 seconds
+                await asyncio.sleep(1)  # Update every 1 second for real-time monitoring
                 stats = await self._get_cached_stats()
                 await websocket.send_json({
                     "type": "stats_update",

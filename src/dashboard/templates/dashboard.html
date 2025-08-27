@@ -788,6 +788,21 @@
         document.addEventListener('DOMContentLoaded', () => {
             dashboard = new PHIDSDashboard();
 
+            // Initialize Bootstrap dropdowns manually if needed
+            const dropdownElementList = document.querySelectorAll('.dropdown-toggle');
+            const dropdownList = [...dropdownElementList].map(dropdownToggleEl => new bootstrap.Dropdown(dropdownToggleEl));
+
+            // Debug: Check if Controls dropdown is working
+            const controlsDropdown = document.getElementById('controlsDropdown');
+            if (controlsDropdown) {
+                console.log('Controls dropdown found and initialized');
+                controlsDropdown.addEventListener('click', function(e) {
+                    console.log('Controls dropdown clicked');
+                });
+            } else {
+                console.error('Controls dropdown not found!');
+            }
+
             // Add enhanced functionality to existing dashboard
             const originalLoadData = dashboard.loadData;
             dashboard.loadFilteredData = async function(filters) {
