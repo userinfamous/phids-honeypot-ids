@@ -68,6 +68,42 @@ The PHIDS dashboard provides comprehensive real-time monitoring with professiona
 
 ## 🚀 **Quick Start**
 
+### **🪟 Windows Users - Quick Reference**
+
+> **⚠️ Important**: If you're on Windows and SSH/telnet commands don't work in your terminal, use the PowerShell alternatives provided throughout this README.
+
+#### **Essential PowerShell Commands**
+```powershell
+# Instead of: ssh admin@127.0.0.1 -p 2222
+Test-NetConnection -ComputerName 127.0.0.1 -Port 2222
+
+# Instead of: curl http://127.0.0.1:8080
+Invoke-WebRequest -Uri "http://127.0.0.1:8080" -Method GET
+
+# Instead of: telnet 127.0.0.1 2222
+$client = New-Object System.Net.Sockets.TcpClient; $client.Connect("127.0.0.1", 2222); $client.Close()
+
+# Check listening ports
+netstat -an | Select-String ":2222|:8080|:5000"
+```
+
+#### **🚀 Windows PowerShell Testing Script**
+For comprehensive testing without needing SSH/curl/telnet:
+```powershell
+# Run the automated Windows testing script
+.\test_honeypots_windows.ps1
+
+# With verbose output
+.\test_honeypots_windows.ps1 -Verbose
+
+# Skip specific tests
+.\test_honeypots_windows.ps1 -SkipSSH -SkipHTTP
+```
+
+#### **If Git Bash isn't working**
+- **Recommended**: Use PowerShell instead (better Windows integration)
+- **Alternative**: Reinstall Git for Windows from https://git-scm.com/download/win
+
 ### **Installation**
 
 #### **📋 Prerequisites**
@@ -77,6 +113,25 @@ The PHIDS dashboard provides comprehensive real-time monitoring with professiona
 - **Administrator privileges** (for honeypot port binding)
 
 #### **🔧 Setup Steps**
+
+##### **Windows PowerShell (Recommended)**
+```powershell
+# Clone the repository
+git clone https://github.com/userinfamous/phids-honeypot-ids.git
+cd phids-honeypot-ids
+
+# Create virtual environment
+python -m venv venv
+.\venv\Scripts\Activate.ps1
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Generate sample data for demonstration
+python demo_dashboard.py
+```
+
+##### **Linux/macOS**
 ```bash
 # Clone the repository
 git clone https://github.com/userinfamous/phids-honeypot-ids.git
@@ -84,13 +139,29 @@ cd phids-honeypot-ids
 
 # Create virtual environment
 python -m venv venv
-source venv/bin/activate  # Linux/Mac
-# .\venv\Scripts\activate  # Windows
+source venv/bin/activate
 
 # Install dependencies
 pip install -r requirements.txt
 
 # Generate sample data for demonstration
+python demo_dashboard.py
+```
+
+##### **Windows Command Prompt**
+```cmd
+REM Clone the repository
+git clone https://github.com/userinfamous/phids-honeypot-ids.git
+cd phids-honeypot-ids
+
+REM Create virtual environment
+python -m venv venv
+.\venv\Scripts\activate.bat
+
+REM Install dependencies
+pip install -r requirements.txt
+
+REM Generate sample data for demonstration
 python demo_dashboard.py
 ```
 
@@ -100,6 +171,47 @@ python demo_dashboard.py
 - **⚠️ Scapy Optional**: Required only for live network monitoring (`pip install scapy`)
 - **🌐 Cross-Platform**: Works on Windows, Linux, and macOS
 - **🔧 CI/CD Ready**: GitHub Actions workflow validates all Python versions
+
+#### **🪟 Windows-Specific Setup**
+
+##### **Installing SSH Client (if not available)**
+```powershell
+# Check if SSH is available
+ssh -V
+
+# If SSH is not found, install OpenSSH (Windows 10/11)
+# Method 1: Using Windows Features
+Add-WindowsCapability -Online -Name OpenSSH.Client~~~~0.0.1.0
+
+# Method 2: Using Chocolatey (if installed)
+choco install openssh
+
+# Method 3: Download Git for Windows (includes SSH)
+# Visit: https://git-scm.com/download/win
+```
+
+##### **PowerShell Execution Policy**
+```powershell
+# If you get execution policy errors, run as Administrator:
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+
+# Or for the current session only:
+Set-ExecutionPolicy -ExecutionPolicy Bypass -Scope Process
+```
+
+##### **Alternative Network Testing Tools**
+```powershell
+# If SSH/telnet are not available, use PowerShell alternatives:
+
+# Test TCP connection (instead of telnet)
+Test-NetConnection -ComputerName 127.0.0.1 -Port 2222
+
+# HTTP requests (instead of curl)
+Invoke-WebRequest -Uri "http://127.0.0.1:8080" -Method GET
+
+# Test port connectivity
+(New-Object System.Net.Sockets.TcpClient).Connect("127.0.0.1", 2222)
+```
 
 ### **Launch PHIDS**
 ```bash
@@ -392,7 +504,9 @@ python main.py --debug
 ### **🔐 SSH Honeypot Testing (Port 2222)**
 
 #### **Test 1: Single SSH Connection Detection**
-```bash
+
+##### **Windows PowerShell**
+```powershell
 # Terminal 2: Test individual connections
 # ⏱️ These should appear in dashboard within 1-2 seconds with correct timestamps
 
@@ -401,12 +515,38 @@ ssh admin@127.0.0.1 -p 2222
 # Try passwords: admin, password, 123456, root
 # Press Ctrl+C to disconnect
 
-# Method 2: Using telnet for basic connection testing
+# Method 2: Test TCP connection (PowerShell alternative)
+Test-NetConnection -ComputerName 127.0.0.1 -Port 2222
+
+# Method 3: Using PowerShell TCP client
+$client = New-Object System.Net.Sockets.TcpClient
+$client.Connect("127.0.0.1", 2222)
+$stream = $client.GetStream()
+$writer = New-Object System.IO.StreamWriter($stream)
+$writer.WriteLine("SSH-2.0-TestClient")
+$writer.Flush()
+Start-Sleep -Seconds 2
+$client.Close()
+
+# Method 4: Using telnet (if available)
+telnet 127.0.0.1 2222
+# Type some characters and press Enter
+# Press Ctrl+] then 'quit' to exit
+```
+
+##### **Linux/macOS**
+```bash
+# Method 1: Using SSH client
+ssh admin@127.0.0.1 -p 2222
+# Try passwords: admin, password, 123456, root
+# Press Ctrl+C to disconnect
+
+# Method 2: Using telnet
 telnet 127.0.0.1 2222
 # Type some characters and press Enter
 # Press Ctrl+] then 'quit' to exit
 
-# Method 3: Using netcat (if available)
+# Method 3: Using netcat
 nc 127.0.0.1 2222
 # Type some data and press Ctrl+C
 ```
@@ -423,10 +563,28 @@ nc 127.0.0.1 2222
 ### **🌐 HTTP Honeypot Testing (Port 8080)**
 
 #### **Test 1: Basic HTTP Request Detection**
-```bash
+
+##### **Windows PowerShell**
+```powershell
 # Terminal 2: Basic web requests
 # ⏱️ These should appear in dashboard immediately with accurate timestamps
 
+# Simple GET requests
+Invoke-WebRequest -Uri "http://127.0.0.1:8080/" -Method GET
+Invoke-WebRequest -Uri "http://127.0.0.1:8080/admin" -Method GET
+Invoke-WebRequest -Uri "http://127.0.0.1:8080/login" -Method GET
+Invoke-WebRequest -Uri "http://127.0.0.1:8080/config" -Method GET
+
+# POST requests
+$body = @{user="admin"; pass="test"}
+Invoke-WebRequest -Uri "http://127.0.0.1:8080/login" -Method POST -Body $body
+
+# Alternative: Using Invoke-RestMethod
+Invoke-RestMethod -Uri "http://127.0.0.1:8080/" -Method GET
+```
+
+##### **Linux/macOS**
+```bash
 # Simple GET requests
 curl -v http://127.0.0.1:8080/
 curl -v http://127.0.0.1:8080/admin
@@ -438,8 +596,26 @@ curl -X POST http://127.0.0.1:8080/login -d "user=admin&pass=test"
 ```
 
 #### **Test 2: SQL Injection Detection**
-```bash
+
+##### **Windows PowerShell**
+```powershell
 # Terminal 2: SQL injection attempts
+Write-Host "🔥 Testing SQL injection detection..." -ForegroundColor Red
+
+# Basic SQL injection
+Invoke-WebRequest -Uri "http://127.0.0.1:8080/login?user=admin&pass=admin' OR '1'='1" -Method GET
+
+# Union-based injection
+Invoke-WebRequest -Uri "http://127.0.0.1:8080/search?q=' UNION SELECT * FROM users --" -Method GET
+
+# URL-encoded injection
+$encodedPayload = [System.Web.HttpUtility]::UrlEncode("admin' OR '1'='1")
+Invoke-WebRequest -Uri "http://127.0.0.1:8080/login?user=admin&pass=$encodedPayload" -Method GET
+```
+
+##### **Linux/macOS**
+```bash
+# SQL injection attempts
 echo "🔥 Testing SQL injection detection..."
 
 # Basic SQL injection
@@ -562,6 +738,26 @@ curl http://127.0.0.1:8080/test2
 ### **🔧 Troubleshooting Guide**
 
 #### **Issue: Attacks Not Appearing in Dashboard**
+
+##### **Windows PowerShell**
+```powershell
+# Check 1: Verify PHIDS is running
+# Terminal 1 should show: "SSH honeypot started on port 2222"
+
+# Check 2: Verify dashboard is accessible
+Invoke-WebRequest -Uri "http://127.0.0.1:5000/api/stats" -Method GET
+# Should return JSON with statistics
+
+# Check 3: Test with simple connection
+Test-NetConnection -ComputerName 127.0.0.1 -Port 2222
+# Should see connection in logs immediately
+
+# Check 4: Check for port conflicts
+netstat -an | Select-String ":2222|:8080"
+# Should show LISTENING status
+```
+
+##### **Linux/macOS**
 ```bash
 # Check 1: Verify PHIDS is running
 # Terminal 1 should show: "SSH honeypot started on port 2222"
@@ -581,6 +777,19 @@ netstat -an | grep :8080
 ```
 
 #### **Issue: Incorrect Timestamps**
+
+##### **Windows PowerShell**
+```powershell
+# Check 1: Clear browser cache and refresh dashboard
+# Check 2: Verify system time is correct
+Get-Date
+# Check 3: Clear logs and test with fresh attack
+# Dashboard → Controls → Clear Logs → All Logs
+Invoke-WebRequest -Uri "http://127.0.0.1:8080/timestamp-test" -Method GET
+# New entry should show current time
+```
+
+##### **Linux/macOS**
 ```bash
 # Check 1: Clear browser cache and refresh dashboard
 # Check 2: Verify system time is correct
@@ -597,6 +806,91 @@ curl http://127.0.0.1:8080/timestamp-test
 # Check 2: Open browser developer tools (F12)
 # Check 3: Look for JavaScript errors in console
 # Check 4: Try refreshing page and clicking Controls again
+```
+
+### **🪟 Windows-Specific Troubleshooting**
+
+#### **Issue: "ssh: command not found" or "telnet: command not found"**
+```powershell
+# Problem: SSH/telnet not available in Windows terminal
+# Solution 1: Install OpenSSH Client
+Add-WindowsCapability -Online -Name OpenSSH.Client~~~~0.0.1.0
+
+# Solution 2: Use PowerShell alternatives
+# Instead of: ssh admin@127.0.0.1 -p 2222
+Test-NetConnection -ComputerName 127.0.0.1 -Port 2222
+
+# Instead of: telnet 127.0.0.1 2222
+$client = New-Object System.Net.Sockets.TcpClient
+$client.Connect("127.0.0.1", 2222)
+$client.Close()
+
+# Instead of: curl http://127.0.0.1:8080
+Invoke-WebRequest -Uri "http://127.0.0.1:8080" -Method GET
+```
+
+#### **Issue: "Execution policy" errors in PowerShell**
+```powershell
+# Problem: Cannot run scripts due to execution policy
+# Solution: Set execution policy (run as Administrator)
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+
+# Or for current session only:
+Set-ExecutionPolicy -ExecutionPolicy Bypass -Scope Process
+```
+
+#### **Issue: Git Bash not recognizing git commands**
+```powershell
+# Problem: Git Bash PATH issues
+# Solution 1: Use PowerShell instead (recommended)
+# PowerShell has better Windows integration
+
+# Solution 2: Reinstall Git for Windows
+# Download from: https://git-scm.com/download/win
+# Choose "Git from the command line and also from 3rd-party software"
+
+# Solution 3: Add Git to PATH manually
+# Add to PATH: C:\Program Files\Git\bin
+$env:PATH += ";C:\Program Files\Git\bin"
+```
+
+#### **Issue: Port conflicts on Windows**
+```powershell
+# Check what's using ports 2222, 8080, 5000
+netstat -ano | Select-String ":2222|:8080|:5000"
+
+# Find process using specific port
+Get-Process -Id (Get-NetTCPConnection -LocalPort 2222).OwningProcess
+
+# Kill process if needed (replace PID with actual process ID)
+Stop-Process -Id <PID> -Force
+```
+
+#### **Issue: Firewall blocking connections**
+```powershell
+# Check Windows Firewall status
+Get-NetFirewallProfile | Select-Object Name, Enabled
+
+# Add firewall rules for PHIDS (run as Administrator)
+New-NetFirewallRule -DisplayName "PHIDS SSH Honeypot" -Direction Inbound -Port 2222 -Protocol TCP -Action Allow
+New-NetFirewallRule -DisplayName "PHIDS HTTP Honeypot" -Direction Inbound -Port 8080 -Protocol TCP -Action Allow
+New-NetFirewallRule -DisplayName "PHIDS Dashboard" -Direction Inbound -Port 5000 -Protocol TCP -Action Allow
+```
+
+#### **Issue: Python virtual environment not activating**
+```powershell
+# Problem: .\venv\Scripts\Activate.ps1 not working
+# Solution 1: Use full path
+& ".\venv\Scripts\Activate.ps1"
+
+# Solution 2: Use batch file instead
+.\venv\Scripts\activate.bat
+
+# Solution 3: Check execution policy (see above)
+
+# Verify activation worked
+Get-Command python | Select-Object Source
+# Should show path inside venv folder
 ```
 
 ---

@@ -123,27 +123,12 @@
                 PHIDS Dashboard
             </a>
 
-            <!-- Enhanced Controls -->
+            <!-- Enhanced Controls Button -->
             <div class="navbar-nav me-auto">
-                <div class="nav-item dropdown">
-                    <a class="nav-link dropdown-toggle text-white" href="#" id="controlsDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                <div class="nav-item">
+                    <button class="btn btn-outline-light btn-sm ms-2" onclick="showControlsModal()" title="Dashboard Controls">
                         <i class="fas fa-cog me-1"></i>Controls
-                    </a>
-                    <ul class="dropdown-menu" aria-labelledby="controlsDropdown">
-                        <li><a class="dropdown-item" href="#" onclick="showClearLogsModal(); return false;">
-                            <i class="fas fa-trash me-2 text-danger"></i>Clear Logs
-                        </a></li>
-                        <li><a class="dropdown-item" href="#" onclick="toggleViewMode(); return false;">
-                            <i class="fas fa-clock me-2 text-info"></i>Toggle Live/Historical
-                        </a></li>
-                        <li><hr class="dropdown-divider"></li>
-                        <li><a class="dropdown-item" href="#" onclick="exportData('connections', 'csv'); return false;">
-                            <i class="fas fa-download me-2 text-success"></i>Export Connections (CSV)
-                        </a></li>
-                        <li><a class="dropdown-item" href="#" onclick="exportData('alerts', 'csv'); return false;">
-                            <i class="fas fa-download me-2 text-success"></i>Export Alerts (CSV)
-                        </a></li>
-                    </ul>
+                    </button>
                 </div>
 
                 <div class="nav-item">
@@ -506,7 +491,17 @@
 
             addActivityEntry(data, type) {
                 const log = document.getElementById('activityLog');
-                const timestamp = new Date().toLocaleTimeString();
+
+                // Use the actual event timestamp if provided, otherwise fall back to current time
+                let timestamp;
+                if (data.timestamp) {
+                    // Parse the ISO timestamp and format it for display
+                    const eventTime = new Date(data.timestamp);
+                    timestamp = eventTime.toLocaleTimeString();
+                } else {
+                    // Fallback to current time if no timestamp provided
+                    timestamp = new Date().toLocaleTimeString();
+                }
 
                 const entry = document.createElement('div');
                 entry.className = `log-entry ${type}`;
@@ -624,6 +619,62 @@
         </div>
     </div>
 
+    <!-- Controls Modal -->
+    <div class="modal fade" id="controlsModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        <i class="fas fa-cog text-primary me-2"></i>
+                        Dashboard Controls
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="row g-3">
+                        <!-- View Mode Controls -->
+                        <div class="col-12">
+                            <h6 class="text-muted mb-2">
+                                <i class="fas fa-eye me-1"></i>View Mode
+                            </h6>
+                            <button class="btn btn-outline-info btn-sm w-100" onclick="toggleViewMode(); bootstrap.Modal.getInstance(document.getElementById('controlsModal')).hide();">
+                                <i class="fas fa-clock me-1"></i>Toggle Live/Historical Mode
+                            </button>
+                        </div>
+
+                        <!-- Data Management -->
+                        <div class="col-12">
+                            <h6 class="text-muted mb-2">
+                                <i class="fas fa-database me-1"></i>Data Management
+                            </h6>
+                            <button class="btn btn-outline-danger btn-sm w-100 mb-2" onclick="bootstrap.Modal.getInstance(document.getElementById('controlsModal')).hide(); showClearLogsModal();">
+                                <i class="fas fa-trash me-1"></i>Clear Logs
+                            </button>
+                        </div>
+
+                        <!-- Export Options -->
+                        <div class="col-12">
+                            <h6 class="text-muted mb-2">
+                                <i class="fas fa-download me-1"></i>Export Data
+                            </h6>
+                            <div class="d-grid gap-2">
+                                <button class="btn btn-outline-success btn-sm" onclick="exportData('connections', 'csv'); bootstrap.Modal.getInstance(document.getElementById('controlsModal')).hide();">
+                                    <i class="fas fa-download me-1"></i>Export Connections (CSV)
+                                </button>
+                                <button class="btn btn-outline-success btn-sm" onclick="exportData('alerts', 'csv'); bootstrap.Modal.getInstance(document.getElementById('controlsModal')).hide();">
+                                    <i class="fas fa-download me-1"></i>Export Alerts (CSV)
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Enhanced JavaScript Functions -->
     <script>
         // Global variables for enhanced functionality
@@ -634,6 +685,12 @@
         // Show clear logs modal
         function showClearLogsModal() {
             const modal = new bootstrap.Modal(document.getElementById('clearLogsModal'));
+            modal.show();
+        }
+
+        // Show controls modal
+        function showControlsModal() {
+            const modal = new bootstrap.Modal(document.getElementById('controlsModal'));
             modal.show();
         }
 
@@ -794,21 +851,42 @@
         document.addEventListener('DOMContentLoaded', () => {
             dashboard = new PHIDSDashboard();
 
-            // Initialize Bootstrap dropdowns manually if needed
-            const dropdownElementList = document.querySelectorAll('.dropdown-toggle');
-            const dropdownList = [...dropdownElementList].map(dropdownToggleEl => new bootstrap.Dropdown(dropdownToggleEl));
+            // Ensure Bootstrap is loaded before initializing dropdowns
+            if (typeof bootstrap !== 'undefined') {
+                // Initialize Bootstrap dropdowns manually
+                const dropdownElementList = document.querySelectorAll('.dropdown-toggle');
+                const dropdownList = [...dropdownElementList].map(dropdownToggleEl => {
+                    try {
+                        return new bootstrap.Dropdown(dropdownToggleEl);
+                    } catch (error) {
+                        console.error('Error initializing dropdown:', error);
+                        return null;
+                    }
+                });
 
-            // Debug: Check if Controls dropdown is working
-            const controlsDropdown = document.getElementById('controlsDropdown');
-            if (controlsDropdown) {
-                console.log('Controls dropdown found and initialized');
-                controlsDropdown.addEventListener('click', function(e) {
-                    console.log('Controls dropdown clicked');
+                // Controls button is now a simple button - no dropdown initialization needed
+                console.log('Controls button initialized as simple button');
+
+                // Add global click handler to close dropdowns when clicking outside
+                document.addEventListener('click', function(e) {
+                    if (!e.target.closest('.dropdown')) {
+                        document.querySelectorAll('.dropdown-menu.show').forEach(menu => {
+                            menu.classList.remove('show');
+                        });
+                        document.querySelectorAll('[data-bs-toggle="dropdown"][aria-expanded="true"]').forEach(toggle => {
+                            toggle.setAttribute('aria-expanded', 'false');
+                        });
+                    }
                 });
             } else {
-                console.error('Controls dropdown not found!');
+                console.error('Bootstrap is not loaded!');
             }
+        });
 
+        // Controls button uses simple modal - no additional initialization needed
+
+        // Enhanced dashboard initialization continued
+        document.addEventListener('DOMContentLoaded', () => {
             // Add enhanced functionality to existing dashboard
             const originalLoadData = dashboard.loadData;
             dashboard.loadFilteredData = async function(filters) {
