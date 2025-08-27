@@ -69,10 +69,18 @@ The PHIDS dashboard provides comprehensive real-time monitoring with professiona
 ## 🚀 **Quick Start**
 
 ### **Installation**
+
+#### **📋 Prerequisites**
+- **Python 3.8+** (Recommended: Python 3.10+)
+- **pip** package manager
+- **Git** for version control
+- **Administrator privileges** (for honeypot port binding)
+
+#### **🔧 Setup Steps**
 ```bash
 # Clone the repository
-git clone https://github.com/YOUR_USERNAME/phids.git
-cd phids
+git clone https://github.com/userinfamous/phids-honeypot-ids.git
+cd phids-honeypot-ids
 
 # Create virtual environment
 python -m venv venv
@@ -85,6 +93,13 @@ pip install -r requirements.txt
 # Generate sample data for demonstration
 python demo_dashboard.py
 ```
+
+#### **📦 Dependency Information**
+- **✅ Python 3.8+ Compatible**: All dependencies tested across Python 3.8-3.11
+- **✅ No pandas Required**: Removed pandas dependency for better compatibility
+- **⚠️ Scapy Optional**: Required only for live network monitoring (`pip install scapy`)
+- **🌐 Cross-Platform**: Works on Windows, Linux, and macOS
+- **🔧 CI/CD Ready**: GitHub Actions workflow validates all Python versions
 
 ### **Launch PHIDS**
 ```bash
