@@ -103,7 +103,8 @@ class LogAnalyzer:
         self.logger.debug("Analyzing recent activity")
         
         # Get recent connections (last hour)
-        recent_connections = await self.db_manager.get_recent_connections(hours=1, limit=200)
+        since = datetime.now() - timedelta(hours=1)
+        recent_connections = await self.db_manager.get_recent_connections(since, limit=200)
         
         # Analyze each connection
         for connection in recent_connections:
@@ -116,7 +117,8 @@ class LogAnalyzer:
             self._update_analysis_results(connection_data, iocs)
         
         # Get recent alerts
-        recent_alerts = await self.db_manager.get_recent_alerts(hours=1, limit=100)
+        alert_since = datetime.now() - timedelta(hours=1)
+        recent_alerts = await self.db_manager.get_recent_alerts(alert_since, limit=100)
         
         # Analyze alert patterns
         for alert in recent_alerts:
@@ -128,7 +130,8 @@ class LogAnalyzer:
         self.logger.debug("Analyzing attack patterns")
         
         # Get connections from last 24 hours
-        connections = await self.db_manager.get_recent_connections(hours=24, limit=1000)
+        since = datetime.now() - timedelta(hours=24)
+        connections = await self.db_manager.get_recent_connections(since, limit=1000)
         
         attack_sequences = defaultdict(list)
         
@@ -183,7 +186,8 @@ class LogAnalyzer:
         self.logger.debug("Analyzing time patterns")
         
         # Get connections from last week
-        connections = await self.db_manager.get_recent_connections(hours=168, limit=5000)
+        since = datetime.now() - timedelta(hours=168)
+        connections = await self.db_manager.get_recent_connections(since, limit=5000)
         
         hourly_activity = defaultdict(int)
         daily_activity = defaultdict(int)

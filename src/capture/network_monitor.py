@@ -123,20 +123,34 @@ class NetworkMonitor:
             
             # Check if this is targeting our honeypots
             if self._is_honeypot_traffic(packet_info):
-                asyncio.create_task(self._handle_honeypot_traffic(packet_info))
-            
+                self._schedule_async_task(self._handle_honeypot_traffic(packet_info))
+
             # Analyze for threats
             threats = self._analyze_packet_for_threats(packet_info)
             if threats:
                 self.threat_count += len(threats)
                 self.stats['threats_detected'] += len(threats)
-                
+
                 for threat in threats:
-                    asyncio.create_task(self._handle_threat_detection(threat))
+                    self._schedule_async_task(self._handle_threat_detection(threat))
         
         except Exception as e:
             self.logger.error(f"Error processing packet: {e}")
-    
+
+    def _schedule_async_task(self, coro):
+        """Schedule async task from thread context"""
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(coro)
+        except RuntimeError:
+            # No event loop running, run in new thread
+            def run_async():
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                loop.run_until_complete(coro)
+                loop.close()
+            threading.Thread(target=run_async, daemon=True).start()
+
     def _extract_packet_info(self, packet) -> Optional[Dict]:
         """Extract relevant information from network packet"""
         try:

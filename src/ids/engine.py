@@ -3,7 +3,7 @@ Main IDS Engine for PHIDS
 """
 import asyncio
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from config import IDS_CONFIG
 from src.core.database import DatabaseManager
 from src.capture.packet_capture import PacketCapture
@@ -158,7 +158,8 @@ class IDSEngine:
         while self.running:
             try:
                 # Get recent connections from database
-                recent_connections = await self.db_manager.get_recent_connections(hours=1, limit=50)
+                since = datetime.now() - timedelta(hours=1)
+                recent_connections = await self.db_manager.get_recent_connections(since, limit=50)
                 
                 for connection in recent_connections:
                     # Convert database row to dict

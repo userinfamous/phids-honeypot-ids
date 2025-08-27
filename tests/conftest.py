@@ -2,6 +2,7 @@ import asyncio
 import sys
 from pathlib import Path
 import pytest
+import pytest_asyncio
 
 
 # Ensure project root (python_final_project) is on sys.path
@@ -18,7 +19,7 @@ def event_loop():
     loop.close()
 
 
-@pytest.fixture(scope="session")
+@pytest_asyncio.fixture(scope="session")
 async def db_manager():
     """Initialize DatabaseManager once per test session if available."""
     try:

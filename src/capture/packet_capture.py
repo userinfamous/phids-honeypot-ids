@@ -30,6 +30,9 @@ class PacketCapture:
         # Rate limiting for alerts
         self.alert_cooldown = defaultdict(float)
         self.cooldown_period = 60  # seconds
+
+        # Alert queue for thread-safe alert storage
+        self._alert_queue = deque(maxlen=1000)
         
     async def start(self):
         """Start packet capture"""
@@ -48,7 +51,10 @@ class PacketCapture:
             daemon=True
         )
         self.capture_thread.start()
-        
+
+        # Start alert processing task
+        asyncio.create_task(self._process_alert_queue())
+
         self.logger.info("Packet capture started successfully")
     
     async def stop(self):
@@ -276,9 +282,10 @@ class PacketCapture:
         
         # Log alert
         self.logger.warning(f"ALERT: {description} from {packet_info['src_ip']}")
-        
-        # Store in database (async operation)
-        asyncio.create_task(self._store_alert(alert_data))
+
+        # Store in database (async operation) - schedule for later execution
+        # Since we're in a thread context, we'll store alerts in a queue for processing
+        self._alert_queue.append(alert_data)
     
     async def _store_alert(self, alert_data):
         """Store alert in database"""
@@ -286,6 +293,19 @@ class PacketCapture:
             await self.db_manager.log_alert(alert_data)
         except Exception as e:
             self.logger.error(f"Failed to store alert: {e}")
+
+    async def _process_alert_queue(self):
+        """Process alerts from the queue"""
+        while self.running:
+            try:
+                if self._alert_queue:
+                    alert_data = self._alert_queue.popleft()
+                    await self._store_alert(alert_data)
+                else:
+                    await asyncio.sleep(1)  # Wait if queue is empty
+            except Exception as e:
+                self.logger.error(f"Error processing alert queue: {e}")
+                await asyncio.sleep(5)  # Wait longer on error
     
     def get_statistics(self):
         """Get current packet capture statistics"""

@@ -86,6 +86,22 @@ class DashboardWebServer:
                 self.logger.error(f"Error fetching recent alerts: {e}")
                 return {"alerts": []}
 
+        @self.app.get("/api/alerts/{alert_id}")
+        async def get_alert_details(alert_id: int):
+            """Get detailed information for a specific alert"""
+            if not self.db_manager:
+                return {"error": "Database not available"}
+
+            try:
+                alert_details = await self.get_alert_details(alert_id)
+                if alert_details:
+                    return {"alert": alert_details}
+                else:
+                    return {"error": "Alert not found"}
+            except Exception as e:
+                self.logger.error(f"Error fetching alert details: {e}")
+                return {"error": "Failed to fetch alert details"}
+
         # Enhanced Log Management Endpoints
         @self.app.post("/api/clear-logs")
         async def clear_logs(request: Request):
@@ -467,3 +483,279 @@ class DashboardWebServer:
                 pass
         
         self.active_connections.clear()
+
+    async def get_alert_details(self, alert_id: int):
+        """Get comprehensive details for a specific alert"""
+        try:
+            import aiosqlite
+            from src.threat_intel.threat_intelligence import ThreatIntelligenceManager
+
+            async with aiosqlite.connect(self.db_manager.db_path) as db:
+                db.row_factory = aiosqlite.Row
+
+                # Get the main alert data
+                cursor = await db.execute("""
+                    SELECT * FROM ids_alerts WHERE id = ?
+                """, (alert_id,))
+                alert_row = await cursor.fetchone()
+
+                if not alert_row:
+                    return None
+
+                alert = dict(alert_row)
+
+                # Get related connections from the same source IP around the same time
+                alert_time = datetime.fromisoformat(alert['timestamp'])
+                time_window_start = alert_time - timedelta(minutes=30)
+                time_window_end = alert_time + timedelta(minutes=30)
+
+                cursor = await db.execute("""
+                    SELECT * FROM honeypot_connections
+                    WHERE source_ip = ?
+                    AND timestamp BETWEEN ? AND ?
+                    ORDER BY timestamp DESC
+                    LIMIT 10
+                """, (alert['source_ip'], time_window_start.isoformat(), time_window_end.isoformat()))
+
+                related_connections = [dict(row) for row in await cursor.fetchall()]
+
+                # Get related alerts from the same source IP
+                cursor = await db.execute("""
+                    SELECT * FROM ids_alerts
+                    WHERE source_ip = ?
+                    AND id != ?
+                    AND timestamp BETWEEN ? AND ?
+                    ORDER BY timestamp DESC
+                    LIMIT 5
+                """, (alert['source_ip'], alert_id, time_window_start.isoformat(), time_window_end.isoformat()))
+
+                related_alerts = [dict(row) for row in await cursor.fetchall()]
+
+                # Get threat intelligence for the source IP
+                threat_intel = None
+                try:
+                    threat_manager = ThreatIntelligenceManager()
+                    threat_intel = await threat_manager.get_ip_reputation(alert['source_ip'])
+                except Exception as e:
+                    self.logger.debug(f"Could not get threat intelligence: {e}")
+
+                # Analyze attack patterns and severity
+                attack_analysis = self._analyze_attack_patterns(alert, related_connections, related_alerts)
+
+                # Generate recommendations
+                recommendations = self._generate_recommendations(alert, attack_analysis)
+
+                # Compile comprehensive alert details
+                detailed_alert = {
+                    **alert,
+                    'related_connections': related_connections,
+                    'related_alerts': related_alerts,
+                    'threat_intelligence': threat_intel,
+                    'attack_analysis': attack_analysis,
+                    'recommendations': recommendations,
+                    'geolocation': self._get_geolocation_info(alert['source_ip']),
+                    'severity_details': self._get_severity_details(alert['severity']),
+                    'timeline': self._create_attack_timeline(alert, related_connections, related_alerts)
+                }
+
+                return detailed_alert
+
+        except Exception as e:
+            self.logger.error(f"Error getting alert details: {e}")
+            return None
+
+    def _analyze_attack_patterns(self, alert, related_connections, related_alerts):
+        """Analyze attack patterns from alert and related data"""
+        analysis = {
+            'attack_type': alert.get('alert_type', 'Unknown'),
+            'attack_frequency': len(related_alerts) + 1,
+            'target_services': set(),
+            'attack_duration': 0,
+            'techniques_used': [],
+            'risk_level': 'medium'
+        }
+
+        # Analyze target services
+        for conn in related_connections:
+            if conn.get('service_type'):
+                analysis['target_services'].add(conn['service_type'])
+
+        # Calculate attack duration
+        if related_connections:
+            timestamps = [datetime.fromisoformat(conn['timestamp']) for conn in related_connections]
+            timestamps.append(datetime.fromisoformat(alert['timestamp']))
+            analysis['attack_duration'] = (max(timestamps) - min(timestamps)).total_seconds()
+
+        # Identify techniques used
+        techniques = set()
+        for conn in related_connections:
+            commands = conn.get('commands', '')
+            if isinstance(commands, str) and commands:
+                if 'cat /etc/passwd' in commands:
+                    techniques.add('System Reconnaissance')
+                if 'wget' in commands or 'curl' in commands:
+                    techniques.add('File Download')
+                if 'nc ' in commands or 'netcat' in commands:
+                    techniques.add('Reverse Shell')
+                if any(sql in commands.lower() for sql in ['union select', 'or 1=1', 'drop table']):
+                    techniques.add('SQL Injection')
+
+        analysis['techniques_used'] = list(techniques)
+
+        # Determine risk level
+        if analysis['attack_frequency'] > 5 or len(analysis['target_services']) > 2:
+            analysis['risk_level'] = 'high'
+        elif analysis['attack_frequency'] > 2 or analysis['attack_duration'] > 300:
+            analysis['risk_level'] = 'medium'
+        else:
+            analysis['risk_level'] = 'low'
+
+        return analysis
+
+    def _generate_recommendations(self, alert, attack_analysis):
+        """Generate security recommendations based on alert analysis"""
+        recommendations = []
+
+        # Base recommendations by alert type
+        alert_type = alert.get('alert_type', '').lower()
+
+        if 'sql' in alert_type or 'injection' in alert_type:
+            recommendations.extend([
+                "Implement input validation and parameterized queries",
+                "Deploy Web Application Firewall (WAF)",
+                "Regular security code reviews"
+            ])
+
+        if 'brute' in alert_type or 'force' in alert_type:
+            recommendations.extend([
+                "Implement account lockout policies",
+                "Deploy multi-factor authentication",
+                "Monitor for credential stuffing attacks"
+            ])
+
+        if 'scan' in alert_type:
+            recommendations.extend([
+                "Implement rate limiting",
+                "Deploy intrusion prevention system",
+                "Monitor for reconnaissance activities"
+            ])
+
+        # Risk-based recommendations
+        if attack_analysis['risk_level'] == 'high':
+            recommendations.extend([
+                "Consider blocking source IP immediately",
+                "Escalate to security team",
+                "Review all systems for compromise"
+            ])
+
+        # Service-specific recommendations
+        if 'ssh' in attack_analysis['target_services']:
+            recommendations.append("Consider changing SSH port and implementing key-based authentication")
+
+        if 'http' in attack_analysis['target_services']:
+            recommendations.append("Review web application security and update to latest versions")
+
+        return list(set(recommendations))  # Remove duplicates
+
+    def _get_geolocation_info(self, ip_address):
+        """Get geolocation information for IP address"""
+        # This is a simplified implementation
+        # In production, you'd use a real geolocation service
+        try:
+            import ipaddress
+            ip = ipaddress.ip_address(ip_address)
+
+            if ip.is_private:
+                return {
+                    'country': 'Private Network',
+                    'city': 'Local',
+                    'latitude': None,
+                    'longitude': None,
+                    'isp': 'Private'
+                }
+            else:
+                # Placeholder for external geolocation service
+                return {
+                    'country': 'Unknown',
+                    'city': 'Unknown',
+                    'latitude': None,
+                    'longitude': None,
+                    'isp': 'Unknown'
+                }
+        except Exception:
+            return {
+                'country': 'Unknown',
+                'city': 'Unknown',
+                'latitude': None,
+                'longitude': None,
+                'isp': 'Unknown'
+            }
+
+    def _get_severity_details(self, severity):
+        """Get detailed severity information"""
+        severity_map = {
+            'low': {
+                'level': 1,
+                'description': 'Low risk activity that requires monitoring',
+                'color': 'success',
+                'action': 'Monitor and log'
+            },
+            'medium': {
+                'level': 2,
+                'description': 'Moderate risk activity that may indicate malicious intent',
+                'color': 'warning',
+                'action': 'Investigate and monitor closely'
+            },
+            'high': {
+                'level': 3,
+                'description': 'High risk activity indicating likely attack',
+                'color': 'danger',
+                'action': 'Immediate investigation and response required'
+            },
+            'critical': {
+                'level': 4,
+                'description': 'Critical security incident requiring immediate action',
+                'color': 'danger',
+                'action': 'Emergency response protocol'
+            }
+        }
+
+        return severity_map.get(severity.lower(), severity_map['medium'])
+
+    def _create_attack_timeline(self, alert, related_connections, related_alerts):
+        """Create a timeline of attack events"""
+        timeline = []
+
+        # Add alert to timeline
+        timeline.append({
+            'timestamp': alert['timestamp'],
+            'type': 'alert',
+            'description': f"Security Alert: {alert['alert_type']}",
+            'details': alert['description'],
+            'severity': alert['severity']
+        })
+
+        # Add related connections
+        for conn in related_connections:
+            timeline.append({
+                'timestamp': conn['timestamp'],
+                'type': 'connection',
+                'description': f"Connection to {conn.get('service_type', 'unknown')} service",
+                'details': f"Port {conn.get('destination_port', 'unknown')}",
+                'severity': 'info'
+            })
+
+        # Add related alerts
+        for related_alert in related_alerts:
+            timeline.append({
+                'timestamp': related_alert['timestamp'],
+                'type': 'alert',
+                'description': f"Related Alert: {related_alert['alert_type']}",
+                'details': related_alert['description'],
+                'severity': related_alert['severity']
+            })
+
+        # Sort by timestamp
+        timeline.sort(key=lambda x: x['timestamp'])
+
+        return timeline

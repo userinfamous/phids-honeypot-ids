@@ -149,13 +149,14 @@ class ReportGenerator:
         start_time = end_time - timedelta(hours=24)
         
         # Get connections
-        connections = await self.db_manager.get_recent_connections(hours=24, limit=1000)
-        
+        since = datetime.now() - timedelta(hours=24)
+        connections = await self.db_manager.get_recent_connections(since, limit=1000)
+
         # Get alerts
-        alerts = await self.db_manager.get_recent_alerts(hours=24, limit=500)
-        
+        alerts = await self.db_manager.get_recent_alerts(since, limit=500)
+
         # Get top attackers
-        top_attackers = await self.db_manager.get_top_attackers(hours=24, limit=20)
+        top_attackers = await self.db_manager.get_top_attackers(since, limit=20)
         
         # Get analysis summary
         analysis_summary = self.log_analyzer.get_analysis_summary()
@@ -177,13 +178,14 @@ class ReportGenerator:
         start_time = end_time - timedelta(days=7)
         
         # Get connections
-        connections = await self.db_manager.get_recent_connections(hours=168, limit=5000)
-        
+        since = datetime.now() - timedelta(days=7)
+        connections = await self.db_manager.get_recent_connections(since, limit=5000)
+
         # Get alerts
-        alerts = await self.db_manager.get_recent_alerts(hours=168, limit=2000)
-        
+        alerts = await self.db_manager.get_recent_alerts(since, limit=2000)
+
         # Get top attackers
-        top_attackers = await self.db_manager.get_top_attackers(hours=168, limit=50)
+        top_attackers = await self.db_manager.get_top_attackers(since, limit=50)
         
         # Get analysis summary
         analysis_summary = self.log_analyzer.get_analysis_summary()
@@ -664,9 +666,10 @@ class ReportGenerator:
             hours = int(time_diff.total_seconds() / 3600)
 
             # Get data for the period
-            connections = await self.db_manager.get_recent_connections(hours=hours, limit=10000)
-            alerts = await self.db_manager.get_recent_alerts(hours=hours, limit=5000)
-            top_attackers = await self.db_manager.get_top_attackers(hours=hours, limit=50)
+            since = start_time
+            connections = await self.db_manager.get_recent_connections(since, limit=10000)
+            alerts = await self.db_manager.get_recent_alerts(since, limit=5000)
+            top_attackers = await self.db_manager.get_top_attackers(since, limit=50)
 
             # Filter data by exact time range
             filtered_connections = [

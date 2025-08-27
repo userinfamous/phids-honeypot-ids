@@ -217,43 +217,20 @@ class DatabaseManager:
             ))
             await db.commit()
     
-    async def get_recent_connections(self, hours=24, limit=100):
-        """Get recent honeypot connections"""
-        async with aiosqlite.connect(self.db_path) as db:
-            db.row_factory = aiosqlite.Row
-            cursor = await db.execute("""
-                SELECT * FROM honeypot_connections 
-                WHERE timestamp > datetime('now', '-{} hours')
-                ORDER BY timestamp DESC 
-                LIMIT ?
-            """.format(hours), (limit,))
-            return await cursor.fetchall()
-    
-    async def get_recent_alerts(self, hours=24, limit=100):
-        """Get recent IDS alerts"""
-        async with aiosqlite.connect(self.db_path) as db:
-            db.row_factory = aiosqlite.Row
-            cursor = await db.execute("""
-                SELECT * FROM ids_alerts 
-                WHERE timestamp > datetime('now', '-{} hours')
-                ORDER BY timestamp DESC 
-                LIMIT ?
-            """.format(hours), (limit,))
-            return await cursor.fetchall()
-    
-    async def get_top_attackers(self, hours=24, limit=10):
-        """Get top attacking IP addresses"""
-        async with aiosqlite.connect(self.db_path) as db:
-            db.row_factory = aiosqlite.Row
-            cursor = await db.execute("""
-                SELECT source_ip, COUNT(*) as connection_count
-                FROM honeypot_connections 
-                WHERE timestamp > datetime('now', '-{} hours')
-                GROUP BY source_ip
-                ORDER BY connection_count DESC 
-                LIMIT ?
-            """.format(hours), (limit,))
-            return await cursor.fetchall()
+    async def get_recent_connections_legacy(self, hours=24, limit=100):
+        """Get recent honeypot connections (legacy method for backward compatibility)"""
+        since = datetime.now() - timedelta(hours=hours)
+        return await self.get_recent_connections(since, limit)
+
+    async def get_recent_alerts_legacy(self, hours=24, limit=100):
+        """Get recent IDS alerts (legacy method for backward compatibility)"""
+        since = datetime.now() - timedelta(hours=hours)
+        return await self.get_recent_alerts(since, limit)
+
+    async def get_top_attackers_legacy(self, hours=24, limit=10):
+        """Get top attacking IP addresses (legacy method for backward compatibility)"""
+        since = datetime.now() - timedelta(hours=hours)
+        return await self.get_top_attackers(since, limit)
     
     async def close(self):
         """Close database connections"""
@@ -329,7 +306,7 @@ class DatabaseManager:
             async with aiosqlite.connect(self.db_path) as db:
                 db.row_factory = aiosqlite.Row
                 cursor = await db.execute(
-                    """SELECT alert_type, severity, source_ip, destination_ip,
+                    """SELECT id, alert_type, severity, source_ip, destination_ip,
                               description, timestamp
                        FROM ids_alerts
                        WHERE timestamp >= ?
