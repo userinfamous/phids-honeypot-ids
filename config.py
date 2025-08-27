@@ -97,7 +97,15 @@ DASHBOARD_CONFIG = {
     "enabled": True,
     "host": "127.0.0.1",
     "port": 5000,
-    "debug": False
+    "debug": False,
+    "performance": {
+        "websocket_update_interval": 5,  # seconds (reduced from 1 for better performance)
+        "stats_cache_duration": 30,     # seconds
+        "max_websocket_connections": 50,
+        "connection_timeout": 60,       # seconds
+        "enable_real_time_mode": True,
+        "enable_debug_logging": False
+    }
 }
 
 # Security settings

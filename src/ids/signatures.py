@@ -37,7 +37,7 @@ class SignatureEngine:
             
             "ssh_bruteforce": {
                 "name": "SSH Brute Force Attack",
-                "description": "Detects SSH brute force login attempts",
+                "description": "CRITICAL: Automated SSH brute force attack detected. Attacker is systematically attempting to guess SSH credentials. This indicates a targeted attack against SSH services. Immediate action required: block source IP, review SSH configuration, enable fail2ban.",
                 "severity": "high",
                 "patterns": [
                     r"Failed password for .* from",
@@ -47,7 +47,14 @@ class SignatureEngine:
                 "conditions": {
                     "failed_attempts_threshold": 5,
                     "time_window": 300  # 5 minutes
-                }
+                },
+                "recommendations": [
+                    "Block source IP immediately",
+                    "Enable SSH key-based authentication",
+                    "Implement fail2ban or similar protection",
+                    "Change default SSH port",
+                    "Review SSH logs for successful logins"
+                ]
             },
             
             "http_bruteforce": {
@@ -67,7 +74,7 @@ class SignatureEngine:
             
             "sql_injection": {
                 "name": "SQL Injection Attempt",
-                "description": "Detects SQL injection attack patterns",
+                "description": "HIGH RISK: SQL injection attack detected. Attacker is attempting to manipulate database queries to extract sensitive data, bypass authentication, or execute unauthorized commands. This could lead to data breach, data corruption, or complete system compromise.",
                 "severity": "high",
                 "patterns": [
                     r"union\s+select",
@@ -78,12 +85,19 @@ class SignatureEngine:
                     r"exec\s*\(",
                     r"sp_executesql",
                     r"xp_cmdshell"
+                ],
+                "recommendations": [
+                    "Implement parameterized queries/prepared statements",
+                    "Enable SQL injection protection (WAF)",
+                    "Validate and sanitize all user inputs",
+                    "Apply principle of least privilege to database accounts",
+                    "Monitor database logs for suspicious activity"
                 ]
             },
             
             "xss_attempt": {
                 "name": "Cross-Site Scripting (XSS)",
-                "description": "Detects XSS attack patterns",
+                "description": "SECURITY ALERT: Cross-Site Scripting (XSS) attack detected. Attacker is attempting to inject malicious scripts into web pages to steal user credentials, session tokens, or perform unauthorized actions on behalf of users. This could lead to account takeover or data theft.",
                 "severity": "medium",
                 "patterns": [
                     r"<script[^>]*>",
@@ -93,6 +107,13 @@ class SignatureEngine:
                     r"onclick\s*=",
                     r"alert\s*\(",
                     r"document\.cookie"
+                ],
+                "recommendations": [
+                    "Implement Content Security Policy (CSP)",
+                    "Encode/escape all user inputs before output",
+                    "Use XSS protection headers (X-XSS-Protection)",
+                    "Validate and sanitize user inputs",
+                    "Consider using a Web Application Firewall (WAF)"
                 ]
             },
             
@@ -130,7 +151,7 @@ class SignatureEngine:
             
             "web_shell": {
                 "name": "Web Shell Access",
-                "description": "Detects web shell access attempts",
+                "description": "CRITICAL THREAT: Web shell access attempt detected. Attacker is trying to access or upload malicious scripts that provide remote command execution capabilities. This indicates a potential system compromise or advanced persistent threat (APT). IMMEDIATE RESPONSE REQUIRED.",
                 "severity": "critical",
                 "patterns": [
                     r"shell\.php",
@@ -143,6 +164,14 @@ class SignatureEngine:
                     r"system\s*\(",
                     r"exec\s*\(",
                     r"passthru\s*\("
+                ],
+                "recommendations": [
+                    "IMMEDIATE: Isolate affected system from network",
+                    "Scan for web shells and malicious files",
+                    "Review web server logs for compromise indicators",
+                    "Check file integrity and recent modifications",
+                    "Implement file upload restrictions and validation",
+                    "Consider incident response and forensic analysis"
                 ]
             },
             
@@ -229,7 +258,9 @@ class SignatureEngine:
                     'source_ip': source_ip,
                     'service_type': service_type,
                     'timestamp': datetime.now(),
-                    'matched_patterns': self._get_matched_patterns(signature, combined_text)
+                    'matched_patterns': self._get_matched_patterns(signature, combined_text),
+                    'recommendations': signature.get('recommendations', []),
+                    'attack_details': self._get_attack_details(sig_id, connection_data, combined_text)
                 }
                 alerts.append(alert)
         
@@ -305,6 +336,65 @@ class SignatureEngine:
             if re.search(pattern, text_data, re.IGNORECASE):
                 matched.append(pattern)
         return matched
+
+    def _get_attack_details(self, sig_id, connection_data, text_data):
+        """Get detailed attack information for better analysis"""
+        details = {
+            'attack_type': sig_id,
+            'source_port': connection_data.get('source_port'),
+            'destination_port': connection_data.get('destination_port'),
+            'service': connection_data.get('service_type'),
+            'session_id': connection_data.get('session_id'),
+            'user_agent': connection_data.get('user_agent', 'Unknown'),
+            'payload_size': len(str(connection_data.get('payloads', []))),
+            'command_count': len(connection_data.get('commands', [])),
+            'connection_duration': connection_data.get('duration', 0)
+        }
+
+        # Add attack-specific details
+        if sig_id == 'sql_injection':
+            details['injection_type'] = self._identify_sql_injection_type(text_data)
+        elif sig_id == 'xss_attempt':
+            details['xss_type'] = self._identify_xss_type(text_data)
+        elif sig_id == 'ssh_bruteforce':
+            details['attempted_usernames'] = self._extract_usernames(connection_data)
+
+        return details
+
+    def _identify_sql_injection_type(self, text_data):
+        """Identify the type of SQL injection"""
+        if re.search(r'union\s+select', text_data, re.IGNORECASE):
+            return 'Union-based injection'
+        elif re.search(r'or\s+1\s*=\s*1', text_data, re.IGNORECASE):
+            return 'Boolean-based blind injection'
+        elif re.search(r'waitfor\s+delay', text_data, re.IGNORECASE):
+            return 'Time-based blind injection'
+        elif re.search(r'drop\s+table', text_data, re.IGNORECASE):
+            return 'Destructive injection (DROP)'
+        else:
+            return 'Generic SQL injection'
+
+    def _identify_xss_type(self, text_data):
+        """Identify the type of XSS attack"""
+        if re.search(r'<script[^>]*>', text_data, re.IGNORECASE):
+            return 'Script-based XSS'
+        elif re.search(r'javascript:', text_data, re.IGNORECASE):
+            return 'JavaScript protocol XSS'
+        elif re.search(r'on\w+\s*=', text_data, re.IGNORECASE):
+            return 'Event handler XSS'
+        else:
+            return 'Generic XSS attempt'
+
+    def _extract_usernames(self, connection_data):
+        """Extract attempted usernames from SSH brute force"""
+        usernames = []
+        commands = connection_data.get('commands', [])
+        for cmd in commands:
+            if isinstance(cmd, dict) and 'username' in cmd:
+                username = cmd['username']
+                if username and username not in usernames:
+                    usernames.append(username)
+        return usernames[:10]  # Limit to first 10 usernames
     
     def add_alert_to_history(self, alert):
         """Add alert to history for condition checking"""

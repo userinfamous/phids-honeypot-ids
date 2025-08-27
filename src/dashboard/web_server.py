@@ -311,9 +311,12 @@ class DashboardWebServer:
         self.logger.info(f"WebSocket connected. Active connections: {len(self.active_connections)}")
         
         try:
+            # Get configurable update interval (default 5 seconds for better performance)
+            update_interval = DASHBOARD_CONFIG.get("performance", {}).get("websocket_update_interval", 5)
+
             while True:
-                # Send periodic updates
-                await asyncio.sleep(1)  # Update every 1 second for real-time monitoring
+                # Send periodic updates with configurable interval
+                await asyncio.sleep(update_interval)
                 stats = await self._get_cached_stats()
                 await websocket.send_json({
                     "type": "stats_update",
@@ -349,14 +352,17 @@ class DashboardWebServer:
     async def _get_cached_stats(self) -> Dict:
         """Get cached statistics with refresh logic"""
         now = datetime.now()
-        
-        # Refresh cache every 30 seconds
-        if (self.cache_timestamp is None or 
-            (now - self.cache_timestamp).total_seconds() > 30):
-            
+
+        # Get configurable cache duration (default 30 seconds)
+        cache_duration = DASHBOARD_CONFIG.get("performance", {}).get("stats_cache_duration", 30)
+
+        # Refresh cache based on configured duration
+        if (self.cache_timestamp is None or
+            (now - self.cache_timestamp).total_seconds() > cache_duration):
+
             self.stats_cache = await self._fetch_fresh_stats()
             self.cache_timestamp = now
-        
+
         return self.stats_cache
     
     async def _fetch_fresh_stats(self) -> Dict:
@@ -398,30 +404,7 @@ class DashboardWebServer:
             "last_updated": datetime.now().isoformat()
         }
     
-    async def broadcast_event(self, event_type: str, data: Dict):
-        """Broadcast real-time events to all connected WebSocket clients"""
-        if not self.active_connections:
-            return
-        
-        message = {
-            "type": event_type,
-            "data": data,
-            "timestamp": datetime.now().isoformat()
-        }
-        
-        # Send to all connected clients
-        disconnected = []
-        for websocket in self.active_connections:
-            try:
-                await websocket.send_json(message)
-            except Exception as e:
-                self.logger.warning(f"Failed to send WebSocket message: {e}")
-                disconnected.append(websocket)
-        
-        # Remove disconnected clients
-        for ws in disconnected:
-            if ws in self.active_connections:
-                self.active_connections.remove(ws)
+
     
     async def initialize(self, db_manager: DatabaseManager):
         """Initialize the web server with database manager"""
