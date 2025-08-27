@@ -344,7 +344,264 @@ python demo_dashboard.py --live
 # Watch real-time attacks flow into the dashboard!
 ```
 
-### **🔥 Manual Attack Simulation**
+### **🔥 Manual Attack Testing & Validation**
+
+**Complete step-by-step guide to test honeypot functionality and verify accurate attack detection with proper timestamps.**
+
+---
+
+## 🧪 **Comprehensive Manual Testing Guide**
+
+### **📋 Prerequisites for Testing**
+
+#### **1. System Setup & Verification**
+```bash
+# Ensure PHIDS is properly installed
+pip install -r requirements.txt
+
+# Verify all components are working
+python -m pytest test_phids.py test_dashboard.py test_main.py -v
+
+# Expected: All tests should pass
+```
+
+#### **2. Clear Demo Data (Recommended)**
+```bash
+# Start dashboard to clear old test data
+python start_dashboard.py
+
+# Open browser: http://127.0.0.1:5000
+# Click: Controls → Clear Logs → All Logs
+# This ensures you see only real attack attempts with accurate timestamps
+```
+
+#### **3. Start PHIDS System**
+```bash
+# Terminal 1: Start main PHIDS system
+python main.py --debug
+
+# Expected output:
+# ✅ SSH honeypot started on port 2222
+# ✅ HTTP honeypot started on port 8080
+# ✅ Dashboard available at http://127.0.0.1:5000
+# ✅ Real-time monitoring active
+```
+
+---
+
+### **🔐 SSH Honeypot Testing (Port 2222)**
+
+#### **Test 1: Single SSH Connection Detection**
+```bash
+# Terminal 2: Test individual connections
+# ⏱️ These should appear in dashboard within 1-2 seconds with correct timestamps
+
+# Method 1: Using SSH client (if available)
+ssh admin@127.0.0.1 -p 2222
+# Try passwords: admin, password, 123456, root
+# Press Ctrl+C to disconnect
+
+# Method 2: Using telnet for basic connection testing
+telnet 127.0.0.1 2222
+# Type some characters and press Enter
+# Press Ctrl+] then 'quit' to exit
+
+# Method 3: Using netcat (if available)
+nc 127.0.0.1 2222
+# Type some data and press Ctrl+C
+```
+
+#### **✅ Expected Results for SSH Tests:**
+- **Dashboard Update**: New connection appears within 1-2 seconds
+- **Timestamp Accuracy**: Shows actual connection time, not page refresh time
+- **Source IP**: 127.0.0.1 (localhost)
+- **Service Type**: SSH
+- **Port**: 2222
+
+---
+
+### **🌐 HTTP Honeypot Testing (Port 8080)**
+
+#### **Test 1: Basic HTTP Request Detection**
+```bash
+# Terminal 2: Basic web requests
+# ⏱️ These should appear in dashboard immediately with accurate timestamps
+
+# Simple GET requests
+curl -v http://127.0.0.1:8080/
+curl -v http://127.0.0.1:8080/admin
+curl -v http://127.0.0.1:8080/login
+curl -v http://127.0.0.1:8080/config
+
+# POST requests
+curl -X POST http://127.0.0.1:8080/login -d "user=admin&pass=test"
+```
+
+#### **Test 2: SQL Injection Detection**
+```bash
+# Terminal 2: SQL injection attempts
+echo "🔥 Testing SQL injection detection..."
+
+# Basic SQL injection
+curl "http://127.0.0.1:8080/login?user=admin&pass=admin' OR '1'='1"
+
+# Union-based injection
+curl "http://127.0.0.1:8080/search?q=' UNION SELECT * FROM users --"
+
+# Time-based injection
+curl "http://127.0.0.1:8080/product?id=1'; WAITFOR DELAY '00:00:05' --"
+
+echo "✅ SQL injection tests complete - Check dashboard for alerts"
+```
+
+#### **Test 3: Cross-Site Scripting (XSS) Detection**
+```bash
+# Terminal 2: XSS attack attempts
+echo "🔥 Testing XSS detection..."
+
+# Reflected XSS
+curl "http://127.0.0.1:8080/search?q=<script>alert('XSS')</script>"
+
+# Event-based XSS
+curl "http://127.0.0.1:8080/profile?name=<img src=x onerror=alert('XSS')>"
+
+# DOM-based XSS
+curl "http://127.0.0.1:8080/page?content=<svg onload=alert('DOM XSS')>"
+
+echo "✅ XSS tests complete - Check dashboard for alerts"
+```
+
+#### **✅ Expected Results for HTTP Tests:**
+- **Dashboard Update**: New connections appear immediately
+- **Timestamp Accuracy**: Shows actual request time
+- **Attack Detection**: IDS alerts for malicious payloads
+- **Service Type**: HTTP
+- **Port**: 8080
+
+---
+
+### **🎯 Localhost vs Remote Attack Detection**
+
+#### **Localhost Testing (127.0.0.1)**
+```bash
+# ✅ PHIDS detects localhost attacks
+# All previous examples work from localhost
+# Useful for: Development, testing, demonstrations
+
+# Verify localhost detection
+curl http://127.0.0.1:8080/test
+# Should appear in dashboard as 127.0.0.1 source
+```
+
+#### **Remote IP Testing (Optional)**
+```bash
+# For testing from different IP addresses:
+
+# Method 1: Use another machine on your network
+# From different computer: curl http://YOUR_IP:8080/admin
+
+# Method 2: Use VPN or proxy to change source IP
+# Configure VPN, then: curl http://127.0.0.1:8080/admin
+
+# Method 3: Use Docker container with different network
+docker run --rm -it alpine/curl curl http://host.docker.internal:8080/admin
+```
+
+---
+
+### **📊 Dashboard Verification Guide**
+
+#### **Step 1: Access Dashboard**
+```bash
+# Open browser to: http://127.0.0.1:5000
+# Should see real-time dashboard with:
+# - Connection statistics
+# - Recent activity log
+# - Attack timeline charts
+# - Service breakdown
+```
+
+#### **Step 2: Verify Real-time Updates**
+```bash
+# In Terminal 2, run an attack:
+curl http://127.0.0.1:8080/admin
+
+# In Dashboard (within 1-2 seconds):
+# ✅ Activity log shows new entry
+# ✅ Connection count increases
+# ✅ Timestamp shows actual request time (not page refresh time)
+# ✅ Charts update automatically
+```
+
+#### **Step 3: Check Timestamp Accuracy**
+```bash
+# Note current time: [Current Time]
+# Run attack: curl http://127.0.0.1:8080/test
+# Check dashboard timestamp - should match attack time, not page refresh time
+
+# Test multiple attacks with delays:
+curl http://127.0.0.1:8080/test1
+sleep 30
+curl http://127.0.0.1:8080/test2
+
+# Dashboard should show 30-second gap between attacks
+```
+
+#### **Step 4: Test Controls Functionality**
+```bash
+# In Dashboard:
+# 1. Click "Controls" dropdown (should open immediately)
+# 2. Click "Clear Logs" → Select "All Logs" → Confirm
+# 3. Verify all logs are cleared
+# 4. Run new attack: curl http://127.0.0.1:8080/fresh-test
+# 5. Verify only new attack appears with correct timestamp
+```
+
+---
+
+### **🔧 Troubleshooting Guide**
+
+#### **Issue: Attacks Not Appearing in Dashboard**
+```bash
+# Check 1: Verify PHIDS is running
+# Terminal 1 should show: "SSH honeypot started on port 2222"
+
+# Check 2: Verify dashboard is accessible
+curl http://127.0.0.1:5000/api/stats
+# Should return JSON with statistics
+
+# Check 3: Test with simple connection
+telnet 127.0.0.1 2222
+# Should see connection in logs immediately
+
+# Check 4: Check for port conflicts
+netstat -an | grep :2222
+netstat -an | grep :8080
+# Should show LISTENING status
+```
+
+#### **Issue: Incorrect Timestamps**
+```bash
+# Check 1: Clear browser cache and refresh dashboard
+# Check 2: Verify system time is correct
+date
+# Check 3: Clear logs and test with fresh attack
+# Dashboard → Controls → Clear Logs → All Logs
+curl http://127.0.0.1:8080/timestamp-test
+# New entry should show current time
+```
+
+#### **Issue: Controls Button Not Working**
+```bash
+# Check 1: Verify JavaScript is enabled in browser
+# Check 2: Open browser developer tools (F12)
+# Check 3: Look for JavaScript errors in console
+# Check 4: Try refreshing page and clicking Controls again
+```
+
+---
+
+### **🎯 Manual Attack Simulation (Original)**
 
 #### **SSH Honeypot Attacks (Port 2222)**
 ```bash

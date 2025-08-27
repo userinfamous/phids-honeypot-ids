@@ -131,14 +131,29 @@ class DatabaseManager:
         await db.execute("CREATE INDEX IF NOT EXISTS idx_patterns_timestamp ON attack_patterns(timestamp)")
     
     async def log_connection(self, connection_data):
-        """Log a honeypot connection"""
+        """Log a honeypot connection with accurate timestamp"""
         async with aiosqlite.connect(self.db_path) as db:
+            # Use the actual event timestamp if provided, otherwise current time
+            timestamp = connection_data.get('timestamp')
+            if timestamp:
+                # If timestamp is a datetime object, convert to ISO format
+                if isinstance(timestamp, datetime):
+                    timestamp = timestamp.isoformat()
+            else:
+                # Use start_time if available, otherwise current time
+                start_time = connection_data.get('start_time')
+                if start_time:
+                    timestamp = start_time.isoformat() if isinstance(start_time, datetime) else start_time
+                else:
+                    timestamp = datetime.now().isoformat()
+
             await db.execute("""
-                INSERT INTO honeypot_connections 
-                (source_ip, source_port, destination_port, service_type, 
+                INSERT INTO honeypot_connections
+                (timestamp, source_ip, source_port, destination_port, service_type,
                  connection_data, session_id, commands, payloads, user_agent)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
+                timestamp,
                 connection_data.get('source_ip'),
                 connection_data.get('source_port'),
                 connection_data.get('destination_port'),
@@ -152,15 +167,25 @@ class DatabaseManager:
             await db.commit()
     
     async def log_alert(self, alert_data):
-        """Log an IDS alert"""
+        """Log an IDS alert with accurate timestamp"""
         async with aiosqlite.connect(self.db_path) as db:
+            # Use the actual event timestamp if provided, otherwise current time
+            timestamp = alert_data.get('timestamp')
+            if timestamp:
+                # If timestamp is a datetime object, convert to ISO format
+                if isinstance(timestamp, datetime):
+                    timestamp = timestamp.isoformat()
+            else:
+                timestamp = datetime.now().isoformat()
+
             await db.execute("""
-                INSERT INTO ids_alerts 
-                (alert_type, severity, source_ip, destination_ip, 
-                 source_port, destination_port, protocol, signature_id, 
+                INSERT INTO ids_alerts
+                (timestamp, alert_type, severity, source_ip, destination_ip,
+                 source_port, destination_port, protocol, signature_id,
                  description, raw_data)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
+                timestamp,
                 alert_data.get('alert_type'),
                 alert_data.get('severity'),
                 alert_data.get('source_ip'),

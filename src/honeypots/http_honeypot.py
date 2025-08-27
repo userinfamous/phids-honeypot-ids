@@ -72,14 +72,16 @@ class HTTPHoneypot(BaseHoneypot):
         
         self.logger.info(f"New HTTP connection from {client_info['source_ip']}:{client_info['source_port']} (session: {session_id})")
         
-        # Store connection info
+        # Store connection info with proper timestamp
+        start_time = datetime.now()
         connection_data = {
             'session_id': session_id,
             'source_ip': client_info['source_ip'],
             'source_port': client_info['source_port'],
             'destination_port': self.config['port'],
             'service_type': 'http',
-            'start_time': datetime.now(),
+            'start_time': start_time,
+            'timestamp': start_time,  # Explicit timestamp for database logging
             'commands': [],
             'payloads': [],
             'connection_data': {}
