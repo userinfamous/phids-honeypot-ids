@@ -1,0 +1,35 @@
+{
+  "timestamp": "2025-08-29T12:26:49.690829",
+  "summary": {
+    "total_attack_patterns": 2,
+    "unique_attackers": 1,
+    "most_targeted_service": "http",
+    "total_connections_analyzed": 15
+  },
+  "top_attackers": {
+    "127.0.0.1": 15
+  },
+  "attack_patterns": {
+    "multi_service_attack": 1,
+    "rapid_fire_attack": 1
+  },
+  "service_activity": {
+    "http": 8,
+    "ssh": 7
+  },
+  "time_patterns": {
+    "hourly": {
+      "12": 10,
+      "11": 5
+    },
+    "daily": {
+      "Friday": 15
+    }
+  },
+  "ioc_summary": {
+    "unique_ips": 0,
+    "unique_domains": 0,
+    "attack_patterns": 0,
+    "user_agents": 0
+  }
+}

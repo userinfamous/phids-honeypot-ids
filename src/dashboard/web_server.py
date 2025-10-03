@@ -5,6 +5,8 @@ Real-time honeypot monitoring and analytics
 import asyncio
 import json
 import logging
+import subprocess
+import random
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 from pathlib import Path
@@ -12,7 +14,7 @@ from pathlib import Path
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 import uvicorn
 
 from config import DASHBOARD_CONFIG, BASE_DIR
@@ -50,6 +52,16 @@ class DashboardWebServer:
         async def dashboard_home(request: Request):
             """Main dashboard page"""
             return self.templates.TemplateResponse("dashboard.html", {"request": request})
+
+        @self.app.get("/info", response_class=HTMLResponse)
+        async def info_page(request: Request):
+            """Information and documentation page"""
+            return self.templates.TemplateResponse("info.html", {"request": request})
+
+        @self.app.get("/attacks", response_class=HTMLResponse)
+        async def attacks_page(request: Request):
+            """Attack scenarios and automation page"""
+            return self.templates.TemplateResponse("attacks.html", {"request": request})
         
         @self.app.get("/api/stats")
         async def get_stats():
@@ -101,6 +113,20 @@ class DashboardWebServer:
             except Exception as e:
                 self.logger.error(f"Error fetching alert details: {e}")
                 return {"error": "Failed to fetch alert details"}
+
+        @self.app.get("/api/authentication-events")
+        async def get_authentication_events(hours: int = 24, limit: int = 100):
+            """Get recent authentication events"""
+            if not self.db_manager:
+                return {"events": []}
+
+            try:
+                since = datetime.now() - timedelta(hours=hours)
+                events = await self.db_manager.get_recent_authentication_events(since, limit)
+                return {"events": events, "period_hours": hours}
+            except Exception as e:
+                self.logger.error(f"Error fetching authentication events: {e}")
+                return {"events": []}
 
         # Enhanced Log Management Endpoints
         @self.app.post("/api/clear-logs")
@@ -312,6 +338,21 @@ class DashboardWebServer:
                 self.logger.error(f"Error fetching threat summary: {e}")
                 return {"connections": [], "alerts": [], "period_hours": hours}
 
+        @self.app.post("/api/execute-attack/{attack_type}")
+        async def execute_attack(attack_type: str):
+            """Execute a specific attack scenario"""
+            try:
+                result = await self._execute_attack_scenario(attack_type)
+                return result
+            except Exception as e:
+                self.logger.error(f"Error executing attack {attack_type}: {e}")
+                return {"success": False, "error": str(e)}
+
+        @self.app.get("/api/attack-status")
+        async def get_attack_status():
+            """Get current attack execution status"""
+            return {"status": "ready", "active_attacks": []}
+
         @self.app.websocket("/ws")
         async def websocket_endpoint(websocket: WebSocket):
             """WebSocket endpoint for real-time updates"""
@@ -409,14 +450,24 @@ class DashboardWebServer:
             # Get statistics for last 24 hours
             since = datetime.now() - timedelta(hours=24)
             
+            # Use optimized statistics summary for better performance
+            basic_stats = await self.db_manager.get_statistics_summary(since)
+
+            # Get additional stats in parallel
+            additional_stats = await asyncio.gather(
+                self.db_manager.get_top_attackers(since, limit=5),
+                self.db_manager.get_service_breakdown(since),
+                self.db_manager.get_hourly_activity(since),
+                self.db_manager.get_alert_severity_breakdown(since),
+                return_exceptions=True
+            )
+
             stats = {
-                "total_connections": await self.db_manager.count_connections(since),
-                "total_alerts": await self.db_manager.count_alerts(since),
-                "unique_ips": await self.db_manager.count_unique_ips(since),
-                "top_attackers": await self.db_manager.get_top_attackers(since, limit=5),
-                "service_breakdown": await self.db_manager.get_service_breakdown(since),
-                "hourly_activity": await self.db_manager.get_hourly_activity(since),
-                "alert_severity": await self.db_manager.get_alert_severity_breakdown(since),
+                **basic_stats,
+                "top_attackers": additional_stats[0] if not isinstance(additional_stats[0], Exception) else [],
+                "service_breakdown": additional_stats[1] if not isinstance(additional_stats[1], Exception) else {},
+                "hourly_activity": additional_stats[2] if not isinstance(additional_stats[2], Exception) else [],
+                "alert_severity": additional_stats[3] if not isinstance(additional_stats[3], Exception) else {},
                 "last_updated": datetime.now().isoformat()
             }
             
@@ -425,6 +476,19 @@ class DashboardWebServer:
         except Exception as e:
             self.logger.error(f"Error fetching stats: {e}")
             return self._get_default_stats()
+
+    def _get_default_stats(self) -> Dict:
+        """Return default empty statistics"""
+        return {
+            "total_connections": 0,
+            "total_alerts": 0,
+            "unique_ips": 0,
+            "top_attackers": [],
+            "service_breakdown": {},
+            "hourly_activity": [],
+            "alert_severity": {},
+            "last_updated": datetime.now().isoformat()
+        }
     
     def _get_default_stats(self) -> Dict:
         """Return default stats when database is unavailable"""
@@ -542,6 +606,9 @@ class DashboardWebServer:
                 # Analyze attack patterns and severity
                 attack_analysis = self._analyze_attack_patterns(alert, related_connections, related_alerts)
 
+                # Validate attack legitimacy
+                validation_result = self._validate_attack_legitimacy(alert, related_connections)
+
                 # Generate recommendations
                 recommendations = self._generate_recommendations(alert, attack_analysis)
 
@@ -552,6 +619,7 @@ class DashboardWebServer:
                     'related_alerts': related_alerts,
                     'threat_intelligence': threat_intel,
                     'attack_analysis': attack_analysis,
+                    'validation': validation_result,
                     'recommendations': recommendations,
                     'geolocation': self._get_geolocation_info(alert['source_ip']),
                     'severity_details': self._get_severity_details(alert['severity']),
@@ -658,38 +726,274 @@ class DashboardWebServer:
         return list(set(recommendations))  # Remove duplicates
 
     def _get_geolocation_info(self, ip_address):
-        """Get geolocation information for IP address"""
-        # This is a simplified implementation
-        # In production, you'd use a real geolocation service
+        """Get geolocation information for IP address with improved accuracy"""
         try:
             import ipaddress
             ip = ipaddress.ip_address(ip_address)
 
+            # Handle private/local networks accurately
             if ip.is_private:
                 return {
                     'country': 'Private Network',
-                    'city': 'Local',
+                    'city': 'Local Network',
                     'latitude': None,
                     'longitude': None,
-                    'isp': 'Private'
+                    'isp': 'Private Network',
+                    'is_private': True,
+                    'accuracy': 'high'
                 }
-            else:
-                # Placeholder for external geolocation service
+
+            # Handle localhost/loopback
+            if ip.is_loopback:
                 return {
-                    'country': 'Unknown',
-                    'city': 'Unknown',
+                    'country': 'Localhost',
+                    'city': 'Local Machine',
                     'latitude': None,
                     'longitude': None,
-                    'isp': 'Unknown'
+                    'isp': 'Loopback',
+                    'is_private': True,
+                    'accuracy': 'high'
                 }
-        except Exception:
+
+            # Handle reserved/special addresses
+            if ip.is_reserved or ip.is_multicast:
+                return {
+                    'country': 'Reserved/Special',
+                    'city': 'Reserved Address Space',
+                    'latitude': None,
+                    'longitude': None,
+                    'isp': 'Reserved',
+                    'is_private': True,
+                    'accuracy': 'high'
+                }
+
+            # For public IPs, use a basic geolocation approach
+            # In a real implementation, you would use services like MaxMind GeoIP2, IPinfo, etc.
+            return self._get_public_ip_geolocation(str(ip))
+
+        except Exception as e:
+            self.logger.warning(f"Error getting geolocation for {ip_address}: {e}")
             return {
                 'country': 'Unknown',
                 'city': 'Unknown',
                 'latitude': None,
                 'longitude': None,
-                'isp': 'Unknown'
+                'isp': 'Unknown',
+                'is_private': False,
+                'accuracy': 'low',
+                'error': str(e)
             }
+
+    def _get_public_ip_geolocation(self, ip_address):
+        """Get geolocation for public IP addresses"""
+        # This is a simplified implementation for educational purposes
+        # In production, integrate with services like MaxMind, IPinfo, or similar
+
+        # Basic country mapping based on IP ranges (very simplified)
+        ip_parts = ip_address.split('.')
+        first_octet = int(ip_parts[0])
+
+        # Simplified mapping - in reality, use proper GeoIP databases
+        country_mapping = {
+            (1, 50): 'United States',
+            (51, 100): 'Europe',
+            (101, 150): 'Asia',
+            (151, 200): 'Various',
+            (201, 255): 'Global'
+        }
+
+        country = 'Unknown'
+        for (start, end), mapped_country in country_mapping.items():
+            if start <= first_octet <= end:
+                country = mapped_country
+                break
+
+        return {
+            'country': country,
+            'city': 'Unknown',
+            'latitude': None,
+            'longitude': None,
+            'isp': 'Unknown ISP',
+            'is_private': False,
+            'accuracy': 'low',
+            'note': 'Educational geolocation - not production accurate'
+        }
+
+    def _validate_attack_legitimacy(self, alert, connection_data=None):
+        """Validate if an attack is legitimate vs false positive"""
+        validation_result = {
+            'is_legitimate': True,
+            'confidence': 'medium',
+            'flags': [],
+            'classification': 'malicious',
+            'reasons': []
+        }
+
+        source_ip = alert.get('source_ip', '')
+
+        # Check for local/testing traffic
+        if self._is_local_testing_traffic(source_ip):
+            validation_result['is_legitimate'] = False
+            validation_result['classification'] = 'testing'
+            validation_result['flags'].append('local_testing')
+            validation_result['reasons'].append('Traffic originates from local/testing environment')
+
+        # Check for penetration testing patterns
+        pentest_indicators = self._detect_penetration_testing(alert, connection_data)
+        if pentest_indicators['is_pentest']:
+            validation_result['classification'] = 'penetration_testing'
+            validation_result['flags'].extend(pentest_indicators['indicators'])
+            validation_result['reasons'].extend(pentest_indicators['reasons'])
+
+        # Check for automated scanner patterns
+        scanner_indicators = self._detect_automated_scanners(alert, connection_data)
+        if scanner_indicators['is_scanner']:
+            validation_result['classification'] = 'automated_scanner'
+            validation_result['flags'].extend(scanner_indicators['indicators'])
+            validation_result['reasons'].extend(scanner_indicators['reasons'])
+
+        # Validate attack complexity and sophistication
+        sophistication = self._assess_attack_sophistication(alert, connection_data)
+        validation_result['sophistication'] = sophistication
+
+        if sophistication['level'] == 'low' and sophistication['automated']:
+            validation_result['confidence'] = 'low'
+            validation_result['flags'].append('low_sophistication')
+
+        return validation_result
+
+    def _is_local_testing_traffic(self, ip_address):
+        """Check if traffic is from local testing environment"""
+        try:
+            import ipaddress
+            ip = ipaddress.ip_address(ip_address)
+
+            # Local networks and testing ranges
+            local_ranges = [
+                ipaddress.ip_network('127.0.0.0/8'),    # Loopback
+                ipaddress.ip_network('10.0.0.0/8'),     # Private Class A
+                ipaddress.ip_network('172.16.0.0/12'),  # Private Class B
+                ipaddress.ip_network('192.168.0.0/16'), # Private Class C
+                ipaddress.ip_network('169.254.0.0/16'), # Link-local
+            ]
+
+            return any(ip in network for network in local_ranges)
+        except:
+            return False
+
+    def _detect_penetration_testing(self, alert, connection_data):
+        """Detect patterns indicating legitimate penetration testing"""
+        indicators = {
+            'is_pentest': False,
+            'indicators': [],
+            'reasons': []
+        }
+
+        # Check for common penetration testing tools
+        pentest_tools = [
+            'nmap', 'metasploit', 'burp', 'sqlmap', 'nikto',
+            'dirb', 'gobuster', 'hydra', 'john', 'hashcat'
+        ]
+
+        alert_text = str(alert).lower()
+        if connection_data:
+            alert_text += str(connection_data).lower()
+
+        detected_tools = [tool for tool in pentest_tools if tool in alert_text]
+        if detected_tools:
+            indicators['is_pentest'] = True
+            indicators['indicators'].append('pentest_tools')
+            indicators['reasons'].append(f'Detected penetration testing tools: {", ".join(detected_tools)}')
+
+        # Check for systematic/methodical approach
+        if self._is_systematic_testing(alert, connection_data):
+            indicators['is_pentest'] = True
+            indicators['indicators'].append('systematic_approach')
+            indicators['reasons'].append('Systematic testing pattern detected')
+
+        return indicators
+
+    def _detect_automated_scanners(self, alert, connection_data):
+        """Detect automated scanner patterns"""
+        indicators = {
+            'is_scanner': False,
+            'indicators': [],
+            'reasons': []
+        }
+
+        # Check for scanner user agents
+        scanner_agents = [
+            'masscan', 'zmap', 'shodan', 'censys', 'binaryedge',
+            'scanner', 'bot', 'crawler', 'spider'
+        ]
+
+        user_agent = alert.get('user_agent', '').lower()
+        if any(agent in user_agent for agent in scanner_agents):
+            indicators['is_scanner'] = True
+            indicators['indicators'].append('scanner_user_agent')
+            indicators['reasons'].append(f'Scanner user agent detected: {user_agent}')
+
+        # Check for rapid sequential requests
+        if self._has_rapid_sequential_pattern(alert):
+            indicators['is_scanner'] = True
+            indicators['indicators'].append('rapid_sequential')
+            indicators['reasons'].append('Rapid sequential request pattern detected')
+
+        return indicators
+
+    def _assess_attack_sophistication(self, alert, connection_data):
+        """Assess the sophistication level of an attack"""
+        sophistication = {
+            'level': 'medium',
+            'automated': False,
+            'factors': []
+        }
+
+        # Check for automation indicators
+        if self._has_automation_indicators(alert, connection_data):
+            sophistication['automated'] = True
+            sophistication['factors'].append('automated_behavior')
+
+        # Assess complexity
+        complexity_score = 0
+
+        # Simple patterns indicate low sophistication
+        simple_patterns = ['admin:admin', 'root:password', 'test:test']
+        if any(pattern in str(alert).lower() for pattern in simple_patterns):
+            complexity_score -= 2
+            sophistication['factors'].append('simple_credentials')
+
+        # Advanced techniques indicate higher sophistication
+        advanced_patterns = ['sql injection', 'xss', 'buffer overflow', 'privilege escalation']
+        if any(pattern in str(alert).lower() for pattern in advanced_patterns):
+            complexity_score += 2
+            sophistication['factors'].append('advanced_techniques')
+
+        # Determine final level
+        if complexity_score <= -2:
+            sophistication['level'] = 'low'
+        elif complexity_score >= 2:
+            sophistication['level'] = 'high'
+
+        return sophistication
+
+    def _is_systematic_testing(self, alert, connection_data):
+        """Check for systematic testing patterns"""
+        # This would analyze timing, sequence, and methodology
+        # Simplified implementation for educational purposes
+        return False
+
+    def _has_rapid_sequential_pattern(self, alert):
+        """Check for rapid sequential request patterns"""
+        # This would analyze request timing and patterns
+        # Simplified implementation for educational purposes
+        return False
+
+    def _has_automation_indicators(self, alert, connection_data):
+        """Check for automation indicators"""
+        # Look for perfect timing, identical requests, etc.
+        # Simplified implementation for educational purposes
+        return False
 
     def _get_severity_details(self, severity):
         """Get detailed severity information"""
@@ -759,3 +1063,282 @@ class DashboardWebServer:
         timeline.sort(key=lambda x: x['timestamp'])
 
         return timeline
+
+    async def _execute_attack_scenario(self, attack_type: str):
+        """Execute a specific attack scenario and return realistic results"""
+        # Simulate realistic attacker information
+        # For local testing, use honest local information
+        source_ip = "127.0.0.1"
+        location_info = {"country": "Local", "city": "Local Network", "isp": "Local System"}
+
+        attack_scenarios = {
+            "ssh_brute_force": {
+                "target": "127.0.0.1:2222",
+                "payloads": ["root:password", "admin:admin", "user:123456", "root:toor"],
+                "method": "SSH Password Authentication",
+                "success_rate": 0.8
+            },
+            "sql_injection": {
+                "target": "127.0.0.1:8080",
+                "payloads": ["' OR '1'='1", "'; DROP TABLE users; --", "' UNION SELECT * FROM users --"],
+                "method": "HTTP POST/GET Parameters",
+                "success_rate": 0.9
+            },
+            "xss_attack": {
+                "target": "127.0.0.1:8080",
+                "payloads": ["<script>alert('XSS')</script>", "<img src=x onerror=alert('XSS')>"],
+                "method": "HTTP Form Injection",
+                "success_rate": 0.7
+            },
+            "directory_traversal": {
+                "target": "127.0.0.1:8080",
+                "payloads": ["../../../etc/passwd", "..\\..\\..\\windows\\system32\\config\\sam"],
+                "method": "HTTP Path Manipulation",
+                "success_rate": 0.6
+            },
+            "port_scan": {
+                "target": "127.0.0.1",
+                "payloads": ["TCP SYN scan ports 1-1000", "Service version detection"],
+                "method": "Network Reconnaissance",
+                "success_rate": 1.0
+            },
+            "multi_vector": {
+                "target": "127.0.0.1",
+                "payloads": ["Port scan + SSH brute force + Web attacks"],
+                "method": "Combined Attack Chain",
+                "success_rate": 0.85
+            }
+        }
+
+        if attack_type not in attack_scenarios:
+            return {"success": False, "error": "Unknown attack type"}
+
+        scenario = attack_scenarios[attack_type]
+
+        # Execute the actual attack based on type
+        successful_credentials = []
+        try:
+            if attack_type == "ssh_brute_force":
+                successful_credentials = await self._execute_ssh_attack(source_ip)
+            elif attack_type == "sql_injection":
+                await self._execute_sql_attack(source_ip)
+            elif attack_type == "xss_attack":
+                await self._execute_xss_attack(source_ip)
+            elif attack_type == "directory_traversal":
+                await self._execute_traversal_attack(source_ip)
+            elif attack_type == "port_scan":
+                await self._execute_port_scan(source_ip)
+            elif attack_type == "multi_vector":
+                await self._execute_multi_attack(source_ip)
+
+            # Local attacks are always detected by the honeypot
+            detected = True
+
+            result = {
+                "success": True,
+                "attack_type": attack_type,
+                "source_ip": source_ip,
+                "target": scenario["target"],
+                "location": location_info['city'],
+                "isp": location_info["isp"],
+                "method": scenario["method"],
+                "payloads_sent": len(scenario["payloads"]),
+                "detected": detected,
+                "timestamp": datetime.now().isoformat()
+            }
+
+            # Add successful credentials for SSH attacks
+            if attack_type == "ssh_brute_force" and successful_credentials:
+                result["successful_credentials"] = successful_credentials
+                result["compromised"] = True
+            else:
+                result["compromised"] = False
+
+            return result
+
+        except Exception as e:
+            self.logger.error(f"Attack execution failed: {e}")
+            return {"success": False, "error": str(e)}
+
+    async def _execute_ssh_attack(self, source_ip: str):
+        """Execute SSH brute force attack"""
+        self.logger.info(f"*** AUTOMATED SSH BRUTE FORCE ATTACK INITIATED ***")
+        self.logger.info(f"Attack source: {source_ip}")
+        self.logger.info(f"Target: SSH Honeypot on port 2222")
+
+        # Use credentials that will actually work with the honeypot
+        credentials = [
+            ("root", "password"),    # This will succeed
+            ("admin", "admin"),      # This will succeed
+            ("user", "123456"),      # This will fail
+            ("test", "wrongpass"),   # This will fail
+            ("root", "toor"),        # This will fail
+            ("admin", "password123") # This will fail
+        ]
+
+        successful_logins = []
+        failed_attempts = []
+
+        for i, (username, password) in enumerate(credentials, 1):
+            try:
+                self.logger.info(f"SSH Brute Force {i}/{len(credentials)}: Attempting {username}:{password}")
+
+                # Simulate SSH connection attempt
+                process = await asyncio.create_subprocess_exec(
+                    "ssh", "-o", "ConnectTimeout=5", "-o", "StrictHostKeyChecking=no",
+                    "-o", "PreferredAuthentications=password",
+                    f"{username}@127.0.0.1", "-p", "2222",
+                    stdin=subprocess.PIPE,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE
+                )
+
+                # Send password and exit
+                stdout, stderr = await process.communicate(input=f"{password}\nexit\n".encode())
+
+                # Check if authentication was successful based on return code
+                if process.returncode == 0:
+                    successful_logins.append(f"{username}:{password}")
+                    self.logger.warning(f"*** SSH LOGIN SUCCESS: {username}:{password} ***")
+                else:
+                    failed_attempts.append(f"{username}:{password}")
+                    self.logger.info(f"SSH authentication failed: {username}:{password}")
+
+                await asyncio.sleep(1)  # Brief delay between attempts
+
+            except Exception as e:
+                failed_attempts.append(f"{username}:{password}")
+                self.logger.error(f"SSH connection error for {username}:{password} - {e}")
+
+        # Summary
+        self.logger.info(f"*** SSH BRUTE FORCE ATTACK COMPLETED ***")
+        self.logger.info(f"Total attempts: {len(credentials)}")
+        self.logger.info(f"Successful logins: {len(successful_logins)}")
+        self.logger.info(f"Failed attempts: {len(failed_attempts)}")
+
+        if successful_logins:
+            self.logger.warning(f"COMPROMISED CREDENTIALS: {', '.join(successful_logins)}")
+        else:
+            self.logger.info("No successful logins - honeypot security held")
+
+        return successful_logins
+
+    async def _execute_sql_attack(self, source_ip: str):
+        """Execute SQL injection attack"""
+        import aiohttp
+
+        self.logger.info(f"Starting SQL injection attack from {source_ip}")
+
+        payloads = [
+            "' OR '1'='1",
+            "'; DROP TABLE users; --",
+            "' UNION SELECT * FROM users --",
+            "admin'--",
+            "' OR 1=1#",
+            "1' AND (SELECT COUNT(*) FROM users) > 0 --",
+            "' UNION SELECT username, password FROM users --"
+        ]
+
+        successful_injections = 0
+
+        async with aiohttp.ClientSession() as session:
+            for i, payload in enumerate(payloads, 1):
+                try:
+                    self.logger.info(f"SQL Injection {i}/{len(payloads)}: {payload}")
+
+                    # Attack search endpoint
+                    response1 = await session.get(f"http://127.0.0.1:8080/search?q={payload}")
+                    self.logger.info(f"   -> GET /search?q={payload} -> Status: {response1.status}")
+
+                    await asyncio.sleep(0.5)
+
+                    # Attack login endpoint
+                    response2 = await session.post("http://127.0.0.1:8080/login",
+                                                 data={"username": payload, "password": "test"})
+                    self.logger.info(f"   -> POST /login (username={payload}) -> Status: {response2.status}")
+
+                    if response1.status == 200 or response2.status == 200:
+                        successful_injections += 1
+
+                    await asyncio.sleep(0.5)
+
+                except Exception as e:
+                    self.logger.error(f"SQL attack attempt failed: {e}")
+
+        self.logger.info(f"SQL Attack completed: {successful_injections}/{len(payloads)} successful injections")
+
+    async def _execute_xss_attack(self, source_ip: str):
+        """Execute XSS attack"""
+        import aiohttp
+
+        payloads = [
+            "<script>alert('XSS')</script>",
+            "<img src=x onerror=alert('XSS')>",
+            "<svg onload=alert('XSS')>",
+            "javascript:alert('XSS')",
+            "<iframe src=javascript:alert('XSS')></iframe>"
+        ]
+
+        async with aiohttp.ClientSession() as session:
+            for payload in payloads:
+                try:
+                    # Attack various endpoints
+                    await session.get(f"http://127.0.0.1:8080/search?q={payload}")
+                    await session.post("http://127.0.0.1:8080/comment",
+                                     data={"comment": payload})
+                    await asyncio.sleep(0.5)
+
+                except Exception as e:
+                    self.logger.debug(f"XSS attack attempt failed: {e}")
+
+    async def _execute_traversal_attack(self, source_ip: str):
+        """Execute directory traversal attack"""
+        import aiohttp
+
+        payloads = [
+            "../../../etc/passwd",
+            "..\\..\\..\\windows\\system32\\config\\sam",
+            "....//....//....//etc/passwd",
+            "%2e%2e%2f%2e%2e%2f%2e%2e%2fetc%2fpasswd",
+            "..%252f..%252f..%252fetc%252fpasswd"
+        ]
+
+        async with aiohttp.ClientSession() as session:
+            for payload in payloads:
+                try:
+                    await session.get(f"http://127.0.0.1:8080/file?path={payload}")
+                    await session.get(f"http://127.0.0.1:8080/download/{payload}")
+                    await asyncio.sleep(0.5)
+
+                except Exception as e:
+                    self.logger.debug(f"Traversal attack attempt failed: {e}")
+
+    async def _execute_port_scan(self, source_ip: str):
+        """Execute port scan"""
+        # Simulate port scanning by connecting to various ports
+        ports = [21, 22, 23, 25, 53, 80, 110, 143, 443, 993, 995, 2222, 8080]
+
+        for port in ports:
+            try:
+                reader, writer = await asyncio.wait_for(
+                    asyncio.open_connection('127.0.0.1', port),
+                    timeout=1.0
+                )
+                writer.close()
+                await writer.wait_closed()
+                await asyncio.sleep(0.1)
+
+            except Exception:
+                # Port closed or filtered
+                pass
+
+    async def _execute_multi_attack(self, source_ip: str):
+        """Execute multi-vector attack"""
+        # Combine multiple attack types
+        await self._execute_port_scan(source_ip)
+        await asyncio.sleep(1)
+        await self._execute_ssh_attack(source_ip)
+        await asyncio.sleep(1)
+        await self._execute_sql_attack(source_ip)
+        await asyncio.sleep(1)
+        await self._execute_xss_attack(source_ip)

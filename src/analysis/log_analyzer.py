@@ -167,7 +167,8 @@ class LogAnalyzer:
         self.logger.debug("Analyzing geographic patterns")
         
         # Get top attackers
-        top_attackers = await self.db_manager.get_top_attackers(hours=24, limit=50)
+        since = datetime.now() - timedelta(hours=24)
+        top_attackers = await self.db_manager.get_top_attackers(since, limit=50)
         
         for attacker in top_attackers:
             ip = attacker['source_ip']
@@ -220,7 +221,8 @@ class LogAnalyzer:
         self.logger.debug("Analyzing IOC trends")
         
         # Get recent connections
-        connections = await self.db_manager.get_recent_connections(hours=24, limit=1000)
+        since = datetime.now() - timedelta(hours=24)
+        connections = await self.db_manager.get_recent_connections(since, limit=1000)
         
         all_iocs = {
             'ip_addresses': set(),

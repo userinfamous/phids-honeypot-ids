@@ -152,28 +152,35 @@ class IDSEngine:
             self.logger.error(f"Error processing alert: {e}")
     
     async def _monitor_connections(self):
-        """Monitor honeypot connections for threats"""
+        """Monitor honeypot connections for threats - optimized version"""
         self.logger.info("Starting connection monitoring")
-        
+
+        last_check = datetime.now() - timedelta(hours=1)
+
         while self.running:
             try:
-                # Get recent connections from database
-                since = datetime.now() - timedelta(hours=1)
-                recent_connections = await self.db_manager.get_recent_connections(since, limit=50)
-                
-                for connection in recent_connections:
-                    # Convert database row to dict
-                    connection_data = dict(connection)
-                    
-                    # Analyze connection
-                    await self.analyze_connection(connection_data)
-                
-                # Wait before next check
-                await asyncio.sleep(30)  # Check every 30 seconds
-                
+                # Only get connections since last check to avoid reprocessing
+                recent_connections = await self.db_manager.get_recent_connections(last_check, limit=100)
+
+                if recent_connections:
+                    # Process connections in batches for better performance
+                    for connection in recent_connections:
+                        connection_data = dict(connection)
+                        await self.analyze_connection(connection_data)
+
+                    # Update last check time to most recent connection
+                    last_check = max(
+                        datetime.fromisoformat(conn['timestamp'])
+                        for conn in recent_connections
+                    )
+
+                # Real-time monitoring for SOC analysis - much faster detection
+                sleep_time = 2 if recent_connections else 5
+                await asyncio.sleep(sleep_time)
+
             except Exception as e:
                 self.logger.error(f"Error in connection monitoring: {e}")
-                await asyncio.sleep(60)  # Wait longer on error
+                await asyncio.sleep(10)  # Faster recovery for real-time monitoring
     
     async def _monitor_anomalies(self):
         """Monitor for anomalous behavior"""

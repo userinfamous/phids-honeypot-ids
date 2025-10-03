@@ -27,7 +27,7 @@ HONEYPOT_CONFIG = {
     },
     "http": {
         "enabled": True,
-        "port": 8080,
+        "port": 8081,  # Changed from 8080 to avoid conflicts
         "banner": "Apache/2.4.41 (Ubuntu)",
         "bind_address": "0.0.0.0"
     },
@@ -47,9 +47,9 @@ IDS_CONFIG = {
     },
     "anomaly_detection": {
         "enabled": True,
-        "packet_rate_threshold": 100,  # packets per second
-        "connection_rate_threshold": 50,  # connections per minute
-        "unusual_port_threshold": 10  # connections to unusual ports
+        "packet_rate_threshold": 500,  # packets per second (increased to reduce false positives)
+        "connection_rate_threshold": 100,  # connections per minute (increased to reduce false positives)
+        "unusual_port_threshold": 20  # connections to unusual ports (increased to reduce false positives)
     }
 }
 
@@ -96,11 +96,11 @@ REPORTING_CONFIG = {
 DASHBOARD_CONFIG = {
     "enabled": True,
     "host": "127.0.0.1",
-    "port": 5000,
+    "port": 5001,  # Changed from 5000 to avoid conflicts
     "debug": False,
     "performance": {
-        "websocket_update_interval": 5,  # seconds (reduced from 1 for better performance)
-        "stats_cache_duration": 30,     # seconds
+        "websocket_update_interval": 1,  # seconds (optimized for real-time SOC analysis)
+        "stats_cache_duration": 10,     # seconds (faster refresh for real-time monitoring)
         "max_websocket_connections": 50,
         "connection_timeout": 60,       # seconds
         "enable_real_time_mode": True,

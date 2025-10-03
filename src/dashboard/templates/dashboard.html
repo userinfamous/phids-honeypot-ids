@@ -302,6 +302,12 @@
             </div>
 
             <div class="navbar-nav ms-auto">
+                <a class="nav-link text-light me-3" href="/attacks" title="Attack Scenarios">
+                    <i class="fas fa-crosshairs me-1"></i>Attacks
+                </a>
+                <a class="nav-link text-light me-3" href="/info" title="System Information">
+                    <i class="fas fa-info-circle me-1"></i>Info
+                </a>
                 <span class="navbar-text me-3">
                     <span id="view-mode-indicator" class="badge bg-info">
                         <i class="fas fa-broadcast-tower me-1"></i>Live Mode
@@ -970,6 +976,62 @@
                                     ${analysis.techniques_used.map(tech => `<span class="badge bg-secondary me-1">${tech}</span>`).join('')}
                                 </div>
                                 ` : ''}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Unusual Traffic Definition -->
+                <div class="row">
+                    <div class="col-md-12">
+                        <div class="card mb-3">
+                            <div class="card-header">
+                                <h6><i class="fas fa-info-circle"></i> What Constitutes "Unusual Traffic"?</h6>
+                            </div>
+                            <div class="card-body">
+                                <p class="mb-3">PHIDS identifies unusual traffic patterns based on the following criteria:</p>
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <h6><i class="fas fa-user-lock text-warning"></i> Authentication Patterns</h6>
+                                        <ul class="list-unstyled mb-3">
+                                            <li><i class="fas fa-chevron-right text-muted me-2"></i>Multiple failed login attempts (>3 in 60 seconds)</li>
+                                            <li><i class="fas fa-chevron-right text-muted me-2"></i>Dictionary/brute force password attacks</li>
+                                            <li><i class="fas fa-chevron-right text-muted me-2"></i>Common username enumeration attempts</li>
+                                            <li><i class="fas fa-chevron-right text-muted me-2"></i>Successful logins to honeypot accounts</li>
+                                        </ul>
+
+                                        <h6><i class="fas fa-network-wired text-info"></i> Connection Patterns</h6>
+                                        <ul class="list-unstyled mb-3">
+                                            <li><i class="fas fa-chevron-right text-muted me-2"></i>Port scanning activities (>10 unique ports)</li>
+                                            <li><i class="fas fa-chevron-right text-muted me-2"></i>Rapid connection attempts from single IP</li>
+                                            <li><i class="fas fa-chevron-right text-muted me-2"></i>Connections to uncommon service ports</li>
+                                            <li><i class="fas fa-chevron-right text-muted me-2"></i>SYN flood patterns (>50 SYN packets/minute)</li>
+                                        </ul>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <h6><i class="fas fa-terminal text-danger"></i> Suspicious Commands</h6>
+                                        <ul class="list-unstyled mb-3">
+                                            <li><i class="fas fa-chevron-right text-muted me-2"></i>System reconnaissance commands (whoami, uname, ps)</li>
+                                            <li><i class="fas fa-chevron-right text-muted me-2"></i>File system exploration (ls, find, cat /etc/passwd)</li>
+                                            <li><i class="fas fa-chevron-right text-muted me-2"></i>Network discovery attempts (netstat, ifconfig)</li>
+                                            <li><i class="fas fa-chevron-right text-muted me-2"></i>Malware download attempts (wget, curl)</li>
+                                        </ul>
+
+                                        <h6><i class="fas fa-code text-warning"></i> Payload Analysis</h6>
+                                        <ul class="list-unstyled mb-3">
+                                            <li><i class="fas fa-chevron-right text-muted me-2"></i>SQL injection patterns (UNION SELECT, OR 1=1)</li>
+                                            <li><i class="fas fa-chevron-right text-muted me-2"></i>Cross-site scripting (XSS) attempts</li>
+                                            <li><i class="fas fa-chevron-right text-muted me-2"></i>Directory traversal patterns (../../../)</li>
+                                            <li><i class="fas fa-chevron-right text-muted me-2"></i>Command injection indicators</li>
+                                        </ul>
+                                    </div>
+                                </div>
+                                <div class="alert alert-info mt-3">
+                                    <i class="fas fa-lightbulb me-2"></i>
+                                    <strong>Note:</strong> Traffic patterns are analyzed in real-time using signature-based detection,
+                                    anomaly detection algorithms, and behavioral analysis to minimize false positives while maintaining
+                                    high detection accuracy for educational and testing purposes.
+                                </div>
                             </div>
                         </div>
                     </div>

@@ -44,45 +44,29 @@ def setup_logging(level="INFO"):
 
 
 def setup_component_loggers():
-    """Setup specialized loggers for different components"""
-    
+    """Setup specialized loggers for different components - optimized version"""
+
     formatter = logging.Formatter(LOGGING_CONFIG["format"])
-    
-    # Honeypot logger
-    honeypot_handler = logging.handlers.RotatingFileHandler(
-        LOGS_DIR / "honeypot.log",
-        maxBytes=LOGGING_CONFIG["file_rotation"]["max_bytes"],
-        backupCount=LOGGING_CONFIG["file_rotation"]["backup_count"]
-    )
-    honeypot_handler.setFormatter(formatter)
-    
-    honeypot_logger = logging.getLogger("honeypot")
-    honeypot_logger.addHandler(honeypot_handler)
-    honeypot_logger.setLevel(logging.INFO)
-    
-    # IDS logger
-    ids_handler = logging.handlers.RotatingFileHandler(
-        LOGS_DIR / "ids.log",
-        maxBytes=LOGGING_CONFIG["file_rotation"]["max_bytes"],
-        backupCount=LOGGING_CONFIG["file_rotation"]["backup_count"]
-    )
-    ids_handler.setFormatter(formatter)
-    
-    ids_logger = logging.getLogger("ids")
-    ids_logger.addHandler(ids_handler)
-    ids_logger.setLevel(logging.INFO)
-    
-    # Analysis logger
-    analysis_handler = logging.handlers.RotatingFileHandler(
-        LOGS_DIR / "analysis.log",
-        maxBytes=LOGGING_CONFIG["file_rotation"]["max_bytes"],
-        backupCount=LOGGING_CONFIG["file_rotation"]["backup_count"]
-    )
-    analysis_handler.setFormatter(formatter)
-    
-    analysis_logger = logging.getLogger("analysis")
-    analysis_logger.addHandler(analysis_handler)
-    analysis_logger.setLevel(logging.INFO)
+
+    # Define component loggers with their respective log files
+    components = [
+        ("honeypot", "honeypot.log"),
+        ("ids", "ids.log"),
+        ("analysis", "analysis.log")
+    ]
+
+    # Create loggers efficiently
+    for component_name, log_file in components:
+        handler = logging.handlers.RotatingFileHandler(
+            LOGS_DIR / log_file,
+            maxBytes=LOGGING_CONFIG["file_rotation"]["max_bytes"],
+            backupCount=LOGGING_CONFIG["file_rotation"]["backup_count"]
+        )
+        handler.setFormatter(formatter)
+
+        logger = logging.getLogger(component_name)
+        logger.addHandler(handler)
+        logger.setLevel(logging.INFO)
 
 
 def get_logger(name):

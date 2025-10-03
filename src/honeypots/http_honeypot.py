@@ -380,29 +380,10 @@ class HTTPHoneypot(BaseHoneypot):
         return self.generate_error_response(404, "Not Found")
     
     def is_attack_pattern(self, request_info):
-        """Detect common attack patterns"""
-        path = request_info['path'].lower()
-        body = request_info['body'].lower()
-        
-        # SQL injection patterns
-        sql_patterns = ['union select', 'or 1=1', 'drop table', 'insert into', 'delete from']
-        
-        # XSS patterns
-        xss_patterns = ['<script>', 'javascript:', 'onerror=', 'onload=']
-        
-        # Directory traversal
-        traversal_patterns = ['../', '..\\', '/etc/passwd', '/windows/system32']
-        
-        # Command injection
-        command_patterns = [';cat ', '|cat ', '`cat ', '$(cat']
-        
-        all_patterns = sql_patterns + xss_patterns + traversal_patterns + command_patterns
-        
-        for pattern in all_patterns:
-            if pattern in path or pattern in body:
-                return True
-        
-        return False
+        """Detect common attack patterns - simplified version for basic detection"""
+        # Use the enhanced detection method and return boolean
+        attack_details = self.detect_attack_patterns_enhanced(request_info)
+        return len(attack_details['attack_vectors']) > 0
 
     def detect_attack_patterns_enhanced(self, request_info):
         """Enhanced attack pattern detection with detailed analysis"""

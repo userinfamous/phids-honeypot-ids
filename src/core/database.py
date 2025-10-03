@@ -117,6 +117,26 @@ class DatabaseManager:
                 details TEXT
             )
         """)
+
+        # Authentication events table
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS authentication_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+                source_ip TEXT NOT NULL,
+                source_port INTEGER,
+                destination_port INTEGER,
+                service_type TEXT NOT NULL,
+                session_id TEXT,
+                username TEXT NOT NULL,
+                password TEXT,
+                auth_method TEXT DEFAULT 'password',
+                success BOOLEAN NOT NULL,
+                failure_reason TEXT,
+                user_agent TEXT,
+                connection_data TEXT
+            )
+        """)
         
         # Create indexes for better performance
         await db.execute("CREATE INDEX IF NOT EXISTS idx_connections_timestamp ON honeypot_connections(timestamp)")
@@ -126,6 +146,9 @@ class DatabaseManager:
         await db.execute("CREATE INDEX IF NOT EXISTS idx_threat_intel_ip ON threat_intelligence(ip_address)")
         await db.execute("CREATE INDEX IF NOT EXISTS idx_patterns_source_ip ON attack_patterns(source_ip)")
         await db.execute("CREATE INDEX IF NOT EXISTS idx_patterns_timestamp ON attack_patterns(timestamp)")
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_auth_events_timestamp ON authentication_events(timestamp)")
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_auth_events_source_ip ON authentication_events(source_ip)")
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_auth_events_success ON authentication_events(success)")
     
     async def log_connection(self, connection_data):
         """Log a honeypot connection with accurate timestamp"""
@@ -195,7 +218,42 @@ class DatabaseManager:
                 str(alert_data.get('raw_data', ''))
             ))
             await db.commit()
-    
+
+    async def log_authentication_event(self, auth_data):
+        """Log an authentication event (both successful and failed)"""
+        async with aiosqlite.connect(self.db_path) as db:
+            # Use the actual event timestamp if provided, otherwise current time
+            timestamp = auth_data.get('timestamp')
+            if timestamp:
+                # If timestamp is a datetime object, convert to ISO format
+                if isinstance(timestamp, datetime):
+                    timestamp = timestamp.isoformat()
+            else:
+                timestamp = datetime.now().isoformat()
+
+            await db.execute("""
+                INSERT INTO authentication_events
+                (timestamp, source_ip, source_port, destination_port, service_type,
+                 session_id, username, password, auth_method, success, failure_reason,
+                 user_agent, connection_data)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                timestamp,
+                auth_data.get('source_ip'),
+                auth_data.get('source_port'),
+                auth_data.get('destination_port'),
+                auth_data.get('service_type'),
+                auth_data.get('session_id'),
+                auth_data.get('username'),
+                auth_data.get('password'),
+                auth_data.get('auth_method', 'password'),
+                auth_data.get('success', False),
+                auth_data.get('failure_reason'),
+                auth_data.get('user_agent'),
+                str(auth_data.get('connection_data', {}))
+            ))
+            await db.commit()
+
     async def update_threat_intelligence(self, ip_data):
         """Update threat intelligence for an IP address"""
         async with aiosqlite.connect(self.db_path) as db:
@@ -217,20 +275,45 @@ class DatabaseManager:
             ))
             await db.commit()
     
-    async def get_recent_connections_legacy(self, hours=24, limit=100):
-        """Get recent honeypot connections (legacy method for backward compatibility)"""
-        since = datetime.now() - timedelta(hours=hours)
-        return await self.get_recent_connections(since, limit)
+    # Legacy methods removed - use the main methods with datetime parameters instead
 
-    async def get_recent_alerts_legacy(self, hours=24, limit=100):
-        """Get recent IDS alerts (legacy method for backward compatibility)"""
-        since = datetime.now() - timedelta(hours=hours)
-        return await self.get_recent_alerts(since, limit)
+    async def get_recent_authentication_events(self, since: datetime, limit: int = 100):
+        """Get recent authentication events"""
+        try:
+            async with aiosqlite.connect(self.db_path) as db:
+                cursor = await db.execute("""
+                    SELECT id, timestamp, source_ip, source_port, destination_port,
+                           service_type, session_id, username, password, auth_method,
+                           success, failure_reason, user_agent, connection_data
+                    FROM authentication_events
+                    WHERE timestamp >= ?
+                    ORDER BY timestamp DESC
+                    LIMIT ?
+                """, (since.isoformat(), limit))
 
-    async def get_top_attackers_legacy(self, hours=24, limit=10):
-        """Get top attacking IP addresses (legacy method for backward compatibility)"""
-        since = datetime.now() - timedelta(hours=hours)
-        return await self.get_top_attackers(since, limit)
+                rows = await cursor.fetchall()
+                events = []
+                for row in rows:
+                    events.append({
+                        'id': row[0],
+                        'timestamp': row[1],
+                        'source_ip': row[2],
+                        'source_port': row[3],
+                        'destination_port': row[4],
+                        'service_type': row[5],
+                        'session_id': row[6],
+                        'username': row[7],
+                        'password': row[8],
+                        'auth_method': row[9],
+                        'success': bool(row[10]),
+                        'failure_reason': row[11],
+                        'user_agent': row[12],
+                        'connection_data': row[13]
+                    })
+                return events
+        except Exception as e:
+            self.logger.error(f"Error getting authentication events: {e}")
+            return []
     
     async def close(self):
         """Close database connections"""
@@ -238,47 +321,57 @@ class DatabaseManager:
         pass
 
     # Dashboard-specific query methods
-    async def count_connections(self, since: datetime) -> int:
-        """Count connections since given datetime"""
+    async def get_statistics_summary(self, since: datetime) -> dict:
+        """Get comprehensive statistics in a single query for better performance"""
         try:
             async with aiosqlite.connect(self.db_path) as db:
+                # Get all statistics in one transaction for better performance
+                stats = {}
+
+                # Count connections
                 cursor = await db.execute(
                     "SELECT COUNT(*) FROM honeypot_connections WHERE timestamp >= ?",
                     (since.isoformat(),)
                 )
                 result = await cursor.fetchone()
-                return result[0] if result else 0
-        except Exception as e:
-            self.logger.error(f"Error counting connections: {e}")
-            return 0
+                stats['total_connections'] = result[0] if result else 0
 
-    async def count_alerts(self, since: datetime) -> int:
-        """Count alerts since given datetime"""
-        try:
-            async with aiosqlite.connect(self.db_path) as db:
+                # Count alerts
                 cursor = await db.execute(
                     "SELECT COUNT(*) FROM ids_alerts WHERE timestamp >= ?",
                     (since.isoformat(),)
                 )
                 result = await cursor.fetchone()
-                return result[0] if result else 0
-        except Exception as e:
-            self.logger.error(f"Error counting alerts: {e}")
-            return 0
+                stats['total_alerts'] = result[0] if result else 0
 
-    async def count_unique_ips(self, since: datetime) -> int:
-        """Count unique IP addresses since given datetime"""
-        try:
-            async with aiosqlite.connect(self.db_path) as db:
+                # Count unique IPs
                 cursor = await db.execute(
                     "SELECT COUNT(DISTINCT source_ip) FROM honeypot_connections WHERE timestamp >= ?",
                     (since.isoformat(),)
                 )
                 result = await cursor.fetchone()
-                return result[0] if result else 0
+                stats['unique_ips'] = result[0] if result else 0
+
+                return stats
         except Exception as e:
-            self.logger.error(f"Error counting unique IPs: {e}")
-            return 0
+            self.logger.error(f"Error getting statistics summary: {e}")
+            return {'total_connections': 0, 'total_alerts': 0, 'unique_ips': 0}
+
+    # Individual count methods for backward compatibility
+    async def count_connections(self, since: datetime) -> int:
+        """Count connections since given datetime"""
+        stats = await self.get_statistics_summary(since)
+        return stats['total_connections']
+
+    async def count_alerts(self, since: datetime) -> int:
+        """Count alerts since given datetime"""
+        stats = await self.get_statistics_summary(since)
+        return stats['total_alerts']
+
+    async def count_unique_ips(self, since: datetime) -> int:
+        """Count unique IP addresses since given datetime"""
+        stats = await self.get_statistics_summary(since)
+        return stats['unique_ips']
 
     async def get_recent_connections(self, since: datetime, limit: int = 100) -> list:
         """Get recent connections"""
@@ -287,7 +380,7 @@ class DatabaseManager:
                 db.row_factory = aiosqlite.Row
                 cursor = await db.execute(
                     """SELECT source_ip, source_port, destination_port, service_type,
-                              session_id, timestamp
+                              session_id, timestamp, commands, payloads, user_agent
                        FROM honeypot_connections
                        WHERE timestamp >= ?
                        ORDER BY timestamp DESC
@@ -295,10 +388,34 @@ class DatabaseManager:
                     (since.isoformat(), limit)
                 )
                 rows = await cursor.fetchall()
-                return [dict(row) for row in rows]
+                connections = []
+                for row in rows:
+                    conn_dict = dict(row)
+                    # Parse commands and payloads from stored format
+                    conn_dict['commands'] = self._parse_stored_data(conn_dict.get('commands'))
+                    conn_dict['payloads'] = self._parse_stored_data(conn_dict.get('payloads'))
+                    connections.append(conn_dict)
+                return connections
         except Exception as e:
             self.logger.error(f"Error fetching recent connections: {e}")
             return []
+
+    def _parse_stored_data(self, data_str):
+        """Parse stored data from database (handles both JSON and Python string representation)"""
+        if not data_str:
+            return []
+
+        try:
+            # Try JSON first
+            import json
+            return json.loads(data_str)
+        except:
+            try:
+                # If JSON fails, try eval for Python string representation
+                return eval(data_str)
+            except:
+                # If both fail, return empty list
+                return []
 
     async def get_recent_alerts(self, since: datetime, limit: int = 50) -> list:
         """Get recent alerts"""

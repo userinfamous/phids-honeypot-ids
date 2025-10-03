@@ -1,0 +1,495 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PHIDS Information - Python Honeypot IDS</title>
+
+    <!-- Favicon and Icons -->
+    <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+    <link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png">
+    <meta name="theme-color" content="#667eea">
+
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Font Awesome -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <!-- Prism.js for code highlighting -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet">
+    
+    <style>
+        body {
+            background-color: #f8f9fa;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        
+        .navbar {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .hero-section {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 4rem 0;
+        }
+        
+        .card {
+            border: none;
+            border-radius: 15px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            margin-bottom: 2rem;
+        }
+        
+        .feature-icon {
+            font-size: 3rem;
+            color: #667eea;
+            margin-bottom: 1rem;
+        }
+        
+        .security-badge {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            color: white;
+            padding: 0.5rem 1rem;
+            border-radius: 25px;
+            font-weight: bold;
+            display: inline-block;
+            margin: 0.25rem;
+        }
+        
+        .tech-stack-item {
+            background: #e9ecef;
+            padding: 0.5rem 1rem;
+            border-radius: 20px;
+            margin: 0.25rem;
+            display: inline-block;
+            font-weight: 500;
+        }
+        
+        .warning-box {
+            background: #fff3cd;
+            border: 1px solid #ffeaa7;
+            border-radius: 10px;
+            padding: 1rem;
+            margin: 1rem 0;
+        }
+        
+        .danger-box {
+            background: #f8d7da;
+            border: 1px solid #f5c6cb;
+            border-radius: 10px;
+            padding: 1rem;
+            margin: 1rem 0;
+        }
+        
+        .success-box {
+            background: #d1edff;
+            border: 1px solid #bee5eb;
+            border-radius: 10px;
+            padding: 1rem;
+            margin: 1rem 0;
+        }
+        
+        .code-block {
+            background: #2d3748;
+            color: #e2e8f0;
+            padding: 1rem;
+            border-radius: 10px;
+            overflow-x: auto;
+            margin: 1rem 0;
+        }
+        
+        .nav-pills .nav-link.active {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+        
+        .section-header {
+            border-bottom: 3px solid #667eea;
+            padding-bottom: 0.5rem;
+            margin-bottom: 2rem;
+        }
+    </style>
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="navbar navbar-expand-lg navbar-dark">
+        <div class="container">
+            <a class="navbar-brand" href="/">
+                <i class="fas fa-shield-alt me-2"></i>
+                PHIDS Information
+            </a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav ms-auto">
+                    <li class="nav-item">
+                        <a class="nav-link" href="/">
+                            <i class="fas fa-tachometer-alt me-1"></i>Dashboard
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link active" href="/info">
+                            <i class="fas fa-info-circle me-1"></i>Information
+                        </a>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Hero Section -->
+    <section class="hero-section">
+        <div class="container text-center">
+            <h1 class="display-4 fw-bold mb-4">
+                <i class="fas fa-shield-alt me-3"></i>
+                Python Honeypot IDS (PHIDS)
+            </h1>
+            <p class="lead mb-4">
+                Advanced cybersecurity education and threat detection platform
+            </p>
+            <div class="row justify-content-center">
+                <div class="col-md-8">
+                    <div class="security-badge">Educational Use</div>
+                    <div class="security-badge">Research Platform</div>
+                    <div class="security-badge">Threat Detection</div>
+                    <div class="security-badge">Real-time Monitoring</div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Main Content -->
+    <div class="container my-5">
+        <!-- Navigation Tabs -->
+        <ul class="nav nav-pills nav-justified mb-4" id="infoTabs" role="tablist">
+            <li class="nav-item" role="presentation">
+                <button class="nav-link active" id="overview-tab" data-bs-toggle="pill" data-bs-target="#overview" type="button" role="tab">
+                    <i class="fas fa-home me-2"></i>Overview
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="technical-tab" data-bs-toggle="pill" data-bs-target="#technical" type="button" role="tab">
+                    <i class="fas fa-cogs me-2"></i>Technical Stack
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="security-tab" data-bs-toggle="pill" data-bs-target="#security" type="button" role="tab">
+                    <i class="fas fa-lock me-2"></i>Security
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="deployment-tab" data-bs-toggle="pill" data-bs-target="#deployment" type="button" role="tab">
+                    <i class="fas fa-rocket me-2"></i>Deployment
+                </button>
+            </li>
+        </ul>
+
+        <!-- Tab Content -->
+        <div class="tab-content" id="infoTabsContent">
+            <!-- Overview Tab -->
+            <div class="tab-pane fade show active" id="overview" role="tabpanel">
+                <div class="row">
+                    <div class="col-lg-8">
+                        <div class="card">
+                            <div class="card-body">
+                                <h2 class="section-header">What is PHIDS?</h2>
+                                <p class="lead">
+                                    PHIDS (Python Honeypot IDS) is a comprehensive cybersecurity education and research platform 
+                                    that simulates vulnerable services to attract and analyze cyber attacks in real-time.
+                                </p>
+                                
+                                <h4><i class="fas fa-bullseye me-2 text-primary"></i>Purpose & Mission</h4>
+                                <ul class="list-unstyled">
+                                    <li><i class="fas fa-check text-success me-2"></i><strong>Cybersecurity Education:</strong> Hands-on learning for students and professionals</li>
+                                    <li><i class="fas fa-check text-success me-2"></i><strong>Threat Research:</strong> Real-world attack pattern analysis and documentation</li>
+                                    <li><i class="fas fa-check text-success me-2"></i><strong>Security Awareness:</strong> Demonstrate attack techniques and defense strategies</li>
+                                    <li><i class="fas fa-check text-success me-2"></i><strong>Incident Response Training:</strong> Practice detecting and responding to threats</li>
+                                </ul>
+
+                                <h4><i class="fas fa-users me-2 text-primary"></i>Target Audiences</h4>
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <h6><i class="fas fa-graduation-cap me-2"></i>Students</h6>
+                                        <ul>
+                                            <li>Cybersecurity degree programs</li>
+                                            <li>Computer science students</li>
+                                            <li>Information technology learners</li>
+                                        </ul>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <h6><i class="fas fa-briefcase me-2"></i>Professionals</h6>
+                                        <ul>
+                                            <li>Security analysts and researchers</li>
+                                            <li>Network administrators</li>
+                                            <li>Penetration testers</li>
+                                        </ul>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="col-lg-4">
+                        <div class="card">
+                            <div class="card-body text-center">
+                                <h5>Key Features</h5>
+                                <div class="feature-icon">
+                                    <i class="fas fa-network-wired"></i>
+                                </div>
+                                <h6>Multi-Protocol Honeypots</h6>
+                                <p class="small">SSH, HTTP, and FTP service simulation</p>
+                                
+                                <div class="feature-icon">
+                                    <i class="fas fa-chart-line"></i>
+                                </div>
+                                <h6>Real-time Analytics</h6>
+                                <p class="small">Live attack visualization and statistics</p>
+                                
+                                <div class="feature-icon">
+                                    <i class="fas fa-database"></i>
+                                </div>
+                                <h6>Comprehensive Logging</h6>
+                                <p class="small">Detailed attack data collection and analysis</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Use Cases -->
+                <div class="card">
+                    <div class="card-body">
+                        <h3 class="section-header">Use Cases & Applications</h3>
+                        <div class="row">
+                            <div class="col-md-4">
+                                <h5><i class="fas fa-school me-2 text-primary"></i>Educational</h5>
+                                <ul>
+                                    <li>Cybersecurity course demonstrations</li>
+                                    <li>Attack technique analysis</li>
+                                    <li>Defense strategy development</li>
+                                    <li>Incident response training</li>
+                                </ul>
+                            </div>
+                            <div class="col-md-4">
+                                <h5><i class="fas fa-microscope me-2 text-primary"></i>Research</h5>
+                                <ul>
+                                    <li>Attack pattern research</li>
+                                    <li>Threat intelligence gathering</li>
+                                    <li>Malware behavior analysis</li>
+                                    <li>Security tool evaluation</li>
+                                </ul>
+                            </div>
+                            <div class="col-md-4">
+                                <h5><i class="fas fa-shield-alt me-2 text-primary"></i>Training</h5>
+                                <ul>
+                                    <li>SOC analyst training</li>
+                                    <li>Penetration testing practice</li>
+                                    <li>Security awareness programs</li>
+                                    <li>Red team exercises</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Technical Stack Tab -->
+            <div class="tab-pane fade" id="technical" role="tabpanel">
+                <div class="card">
+                    <div class="card-body">
+                        <h2 class="section-header">Technical Architecture</h2>
+                        
+                        <h4><i class="fas fa-layer-group me-2 text-primary"></i>Core Technologies</h4>
+                        <div class="mb-4">
+                            <div class="tech-stack-item">Python 3.11+</div>
+                            <div class="tech-stack-item">FastAPI</div>
+                            <div class="tech-stack-item">SQLite</div>
+                            <div class="tech-stack-item">Paramiko</div>
+                            <div class="tech-stack-item">Asyncio</div>
+                            <div class="tech-stack-item">WebSockets</div>
+                            <div class="tech-stack-item">Docker</div>
+                            <div class="tech-stack-item">Bootstrap 5</div>
+                            <div class="tech-stack-item">Chart.js</div>
+                        </div>
+
+                        <h4><i class="fas fa-server me-2 text-primary"></i>System Components</h4>
+                        <div class="row">
+                            <div class="col-md-6">
+                                <h6>Honeypot Services</h6>
+                                <ul>
+                                    <li><strong>SSH Honeypot:</strong> Paramiko-based SSH server simulation</li>
+                                    <li><strong>HTTP Honeypot:</strong> Web application vulnerability simulation</li>
+                                    <li><strong>FTP Honeypot:</strong> File transfer protocol simulation (optional)</li>
+                                </ul>
+                            </div>
+                            <div class="col-md-6">
+                                <h6>Analysis & Monitoring</h6>
+                                <ul>
+                                    <li><strong>IDS Engine:</strong> Signature and anomaly detection</li>
+                                    <li><strong>Log Analyzer:</strong> Attack pattern recognition</li>
+                                    <li><strong>Network Monitor:</strong> Packet capture and analysis</li>
+                                </ul>
+                            </div>
+                        </div>
+
+                        <h4><i class="fas fa-database me-2 text-primary"></i>Data Management</h4>
+                        <div class="code-block">
+                            <pre><code>Database Schema:
+├── honeypot_connections    # Attack session data
+├── ids_alerts             # Security alerts
+├── threat_intelligence    # IP reputation data
+└── attack_patterns        # Behavioral analysis</code></pre>
+                        </div>
+
+                        <h4><i class="fas fa-chart-bar me-2 text-primary"></i>Dashboard Features</h4>
+                        <ul>
+                            <li><strong>Real-time Updates:</strong> WebSocket-based live data streaming</li>
+                            <li><strong>Interactive Charts:</strong> Attack visualization and statistics</li>
+                            <li><strong>Alert Management:</strong> Security event tracking and analysis</li>
+                            <li><strong>Export Capabilities:</strong> Data export in multiple formats</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Security Tab -->
+            <div class="tab-pane fade" id="security" role="tabpanel">
+                <div class="card">
+                    <div class="card-body">
+                        <h2 class="section-header">Security Assessment & Recommendations</h2>
+                        
+                        <div class="danger-box">
+                            <h5><i class="fas fa-exclamation-triangle me-2"></i>Important Security Notice</h5>
+                            <p><strong>PHIDS is designed for educational and research purposes.</strong> This system intentionally exposes vulnerable services and should only be deployed in controlled, isolated environments.</p>
+                        </div>
+
+                        <h4><i class="fas fa-network-wired me-2 text-primary"></i>Network Isolation Status</h4>
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="success-box">
+                                    <h6><i class="fas fa-check-circle me-2"></i>Current Protections</h6>
+                                    <ul>
+                                        <li>Dashboard bound to localhost (127.0.0.1:5000)</li>
+                                        <li>Container-based isolation</li>
+                                        <li>Non-root user execution</li>
+                                        <li>Resource limits configured</li>
+                                    </ul>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="warning-box">
+                                    <h6><i class="fas fa-exclamation-triangle me-2"></i>Security Considerations</h6>
+                                    <ul>
+                                        <li>Honeypots exposed on 0.0.0.0 (all interfaces)</li>
+                                        <li>No authentication on dashboard</li>
+                                        <li>Unencrypted data storage</li>
+                                        <li>No rate limiting implemented</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+
+                        <h4><i class="fas fa-cog me-2 text-primary"></i>Security Hardening Recommendations</h4>
+                        
+                        <h6>Immediate Actions (Critical)</h6>
+                        <ol>
+                            <li><strong>Network Isolation:</strong> Deploy in isolated VLAN or DMZ</li>
+                            <li><strong>Dashboard Authentication:</strong> Implement user authentication</li>
+                            <li><strong>HTTPS:</strong> Enable TLS encryption for web interface</li>
+                            <li><strong>Firewall Rules:</strong> Restrict access to management interfaces</li>
+                        </ol>
+
+                        <h6>Enhanced Security (Recommended)</h6>
+                        <ol>
+                            <li><strong>Database Encryption:</strong> Encrypt SQLite database at rest</li>
+                            <li><strong>Rate Limiting:</strong> Implement connection rate limits</li>
+                            <li><strong>IP Filtering:</strong> Geographic and network-based restrictions</li>
+                            <li><strong>Monitoring:</strong> Add security monitoring and alerting</li>
+                        </ol>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Deployment Tab -->
+            <div class="tab-pane fade" id="deployment" role="tabpanel">
+                <div class="card">
+                    <div class="card-body">
+                        <h2 class="section-header">Deployment Guide</h2>
+                        
+                        <h4><i class="fas fa-docker me-2 text-primary"></i>Docker Deployment (Recommended)</h4>
+                        <div class="code-block">
+                            <pre><code># Quick Start with Docker Compose
+git clone https://github.com/userinfamous/phids-honeypot-ids.git
+cd phids-honeypot-ids
+docker-compose up -d
+
+# Access Dashboard
+http://localhost:5000</code></pre>
+                        </div>
+
+                        <h4><i class="fas fa-python me-2 text-primary"></i>Manual Installation</h4>
+                        <div class="code-block">
+                            <pre><code># Install Dependencies
+pip install -r requirements.txt
+
+# Run PHIDS
+python main.py
+
+# Run Dashboard Only
+python start_dashboard.py</code></pre>
+                        </div>
+
+                        <h4><i class="fas fa-cogs me-2 text-primary"></i>Configuration</h4>
+                        <p>Key configuration options in <code>config.py</code>:</p>
+                        <div class="code-block">
+                            <pre><code># Honeypot Services
+HONEYPOT_CONFIG = {
+    "ssh": {"port": 2222, "enabled": True},
+    "http": {"port": 8080, "enabled": True},
+    "ftp": {"port": 2121, "enabled": False}
+}
+
+# Dashboard Settings
+DASHBOARD_CONFIG = {
+    "host": "127.0.0.1",  # Change for external access
+    "port": 5000,
+    "enabled": True
+}</code></pre>
+                        </div>
+
+                        <div class="warning-box">
+                            <h5><i class="fas fa-exclamation-triangle me-2"></i>Deployment Warnings</h5>
+                            <ul>
+                                <li><strong>Educational Use Only:</strong> Not suitable for production without security hardening</li>
+                                <li><strong>Network Isolation:</strong> Deploy in isolated network segments</li>
+                                <li><strong>Legal Compliance:</strong> Ensure compliance with local laws and regulations</li>
+                                <li><strong>Monitoring Required:</strong> Implement proper monitoring and incident response</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <footer class="bg-dark text-light py-4 mt-5">
+        <div class="container text-center">
+            <p>&copy; 2024 PHIDS - Python Honeypot IDS. Educational and Research Use.</p>
+            <p class="small">
+                <i class="fas fa-shield-alt me-1"></i>
+                Security Assessment Available | 
+                <i class="fas fa-github me-1"></i>
+                Open Source Project
+            </p>
+        </div>
+    </footer>
+
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <!-- Prism.js for code highlighting -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-core.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+</body>
+</html>

@@ -5,6 +5,7 @@ import re
 import time
 from datetime import datetime, timedelta
 from collections import defaultdict
+from urllib.parse import unquote
 
 
 class SignatureEngine:
@@ -225,9 +226,10 @@ class SignatureEngine:
             for cmd in commands:
                 if isinstance(cmd, dict):
                     text_data.extend([
-                        cmd.get('command', ''),
-                        cmd.get('path', ''),
-                        cmd.get('body', ''),
+                        cmd.get('command', ''),  # SSH commands
+                        cmd.get('method', ''),   # HTTP methods
+                        cmd.get('path', ''),     # HTTP paths
+                        cmd.get('body', ''),     # HTTP body
                         str(cmd.get('headers', {}))
                     ])
                 else:
@@ -244,8 +246,13 @@ class SignatureEngine:
         # Add user agent
         text_data.append(user_agent)
         
-        # Combine all text
+        # Combine all text and decode URLs
         combined_text = ' '.join(text_data).lower()
+        # URL decode to catch encoded attack patterns
+        try:
+            combined_text = unquote(combined_text)
+        except:
+            pass  # If decoding fails, use original text
         
         # Check each signature
         for sig_id, signature in self.signatures.items():

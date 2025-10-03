@@ -246,23 +246,50 @@ class PacketCapture:
     
     def _detect_unusual_traffic(self, packet_info):
         """Detect unusual traffic patterns"""
-        # Check for unusual destination ports
+        src_ip = packet_info.get('src_ip', '')
+        dst_ip = packet_info.get('dst_ip', '')
         dst_port = packet_info.get('dst_port')
+        src_port = packet_info.get('src_port')
+
+        # Skip local network traffic (common false positives)
+        local_networks = ['10.', '192.168.', '172.16.', '172.17.', '172.18.', '172.19.',
+                         '172.20.', '172.21.', '172.22.', '172.23.', '172.24.', '172.25.',
+                         '172.26.', '172.27.', '172.28.', '172.29.', '172.30.', '172.31.',
+                         '127.', '169.254.']
+
+        if any(src_ip.startswith(net) for net in local_networks) and any(dst_ip.startswith(net) for net in local_networks):
+            # Skip internal network traffic unless it's targeting our honeypots
+            if dst_port not in [2222, 8080, 2121]:  # Our honeypot ports
+                return False
+
+        # Skip common legitimate services that generate noise
+        legitimate_ports = [53, 5353, 443, 80, 123, 67, 68, 137, 138, 161, 162]
+        if dst_port in legitimate_ports or src_port in legitimate_ports:
+            return False
+
+        # Skip Microsoft/Windows Update traffic
+        microsoft_ips = ['13.107.', '20.', '40.', '52.', '104.', '204.79.', '150.171.']
+        if any(src_ip.startswith(ip) for ip in microsoft_ips) or any(dst_ip.startswith(ip) for ip in microsoft_ips):
+            return False
+
+        # Check for unusual destination ports (only truly suspicious ones)
         if dst_port:
-            # Common ports that shouldn't receive much traffic
-            unusual_ports = [23, 135, 139, 445, 1433, 3389, 5432, 5900]
-            if dst_port in unusual_ports:
-                return True
-        
-        # Check for unusual packet sizes
-        if packet_info['length'] > 1500 or packet_info['length'] < 20:
+            # Ports that are genuinely suspicious for external access
+            suspicious_ports = [23, 135, 139, 445, 1433, 3389, 5432, 5900, 22, 21, 25]
+            if dst_port in suspicious_ports:
+                # Only flag if it's external traffic to these ports
+                if not any(src_ip.startswith(net) for net in local_networks):
+                    return True
+
+        # Check for unusual packet sizes (more restrictive)
+        if packet_info['length'] > 9000 or packet_info['length'] < 10:
             return True
-        
-        # Check for unusual TTL values
+
+        # Check for unusual TTL values (more restrictive)
         ttl = packet_info.get('ttl', 64)
-        if ttl < 10 or ttl > 255:
+        if ttl < 5 or ttl > 250:
             return True
-        
+
         return False
     
     def _generate_alert(self, alert_type, packet_info, description):

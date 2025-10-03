@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Attack Scenarios - PHIDS</title>
+
+    <!-- Favicon and Icons -->
+    <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+    <link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png">
+    <meta name="theme-color" content="#667eea">
+
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Font Awesome -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    
+    <style>
+        body {
+            background-color: #f8f9fa;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        
+        .navbar {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .attack-card {
+            border: none;
+            border-radius: 15px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            margin-bottom: 1.5rem;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        
+        .attack-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
+        }
+        
+        .attack-icon {
+            font-size: 2.5rem;
+            margin-bottom: 1rem;
+        }
+        
+        .ssh-attack { color: #e74c3c; }
+        .http-attack { color: #3498db; }
+        .network-attack { color: #f39c12; }
+        .brute-force { color: #9b59b6; }
+        
+        .attack-btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border: none;
+            border-radius: 25px;
+            padding: 0.75rem 2rem;
+            color: white;
+            font-weight: bold;
+            transition: all 0.3s;
+        }
+        
+        .attack-btn:hover {
+            background: linear-gradient(135deg, #764ba2 0%, #667eea 100%);
+            transform: scale(1.05);
+            color: white;
+        }
+        
+        .attack-btn:disabled {
+            background: #6c757d;
+            transform: none;
+        }
+        
+        .status-indicator {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+        
+        .status-ready { background-color: #28a745; }
+        .status-running { background-color: #ffc107; animation: pulse 1.5s infinite; }
+        .status-complete { background-color: #17a2b8; }
+        .status-error { background-color: #dc3545; }
+        
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
+        
+        .log-output {
+            background: #2d3748;
+            color: #e2e8f0;
+            border-radius: 10px;
+            padding: 1rem;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9rem;
+            max-height: 300px;
+            overflow-y: auto;
+            margin-top: 1rem;
+        }
+        
+        .severity-high { border-left: 4px solid #dc3545; }
+        .severity-medium { border-left: 4px solid #ffc107; }
+        .severity-low { border-left: 4px solid #28a745; }
+    </style>
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="navbar navbar-expand-lg navbar-dark">
+        <div class="container">
+            <a class="navbar-brand" href="/">
+                <i class="fas fa-shield-alt me-2"></i>
+                PHIDS - Attack Scenarios
+            </a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav ms-auto">
+                    <li class="nav-item">
+                        <a class="nav-link" href="/">
+                            <i class="fas fa-tachometer-alt me-1"></i>Dashboard
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link active" href="/attacks">
+                            <i class="fas fa-crosshairs me-1"></i>Attacks
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/info">
+                            <i class="fas fa-info-circle me-1"></i>Info
+                        </a>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <div class="container my-4">
+        <!-- Header -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <h2><i class="fas fa-crosshairs me-2"></i>Attack Simulation Center</h2>
+                <p class="text-muted">Execute pre-configured attack scenarios to test honeypot detection capabilities</p>
+            </div>
+        </div>
+
+        <!-- Attack Categories -->
+        <div class="row">
+            <!-- SSH Attacks -->
+            <div class="col-lg-6 col-md-12 mb-4">
+                <div class="card attack-card severity-high">
+                    <div class="card-body text-center">
+                        <div class="attack-icon ssh-attack">
+                            <i class="fas fa-terminal"></i>
+                        </div>
+                        <h5 class="card-title">SSH Brute Force Attack</h5>
+                        <p class="card-text">Simulate credential brute force attempts against SSH service</p>
+                        <div class="mb-3">
+                            <span class="status-indicator status-ready" id="ssh-status"></span>
+                            <span id="ssh-status-text">Ready</span>
+                        </div>
+                        <button class="btn attack-btn" onclick="executeAttack('ssh_brute_force')" id="ssh-btn">
+                            <i class="fas fa-play me-2"></i>Launch SSH Attack
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- HTTP SQL Injection -->
+            <div class="col-lg-6 col-md-12 mb-4">
+                <div class="card attack-card severity-high">
+                    <div class="card-body text-center">
+                        <div class="attack-icon http-attack">
+                            <i class="fas fa-database"></i>
+                        </div>
+                        <h5 class="card-title">SQL Injection Attack</h5>
+                        <p class="card-text">Execute SQL injection payloads against web application</p>
+                        <div class="mb-3">
+                            <span class="status-indicator status-ready" id="sql-status"></span>
+                            <span id="sql-status-text">Ready</span>
+                        </div>
+                        <button class="btn attack-btn" onclick="executeAttack('sql_injection')" id="sql-btn">
+                            <i class="fas fa-play me-2"></i>Launch SQL Attack
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- XSS Attack -->
+            <div class="col-lg-6 col-md-12 mb-4">
+                <div class="card attack-card severity-medium">
+                    <div class="card-body text-center">
+                        <div class="attack-icon http-attack">
+                            <i class="fas fa-code"></i>
+                        </div>
+                        <h5 class="card-title">Cross-Site Scripting (XSS)</h5>
+                        <p class="card-text">Inject malicious scripts into web application forms</p>
+                        <div class="mb-3">
+                            <span class="status-indicator status-ready" id="xss-status"></span>
+                            <span id="xss-status-text">Ready</span>
+                        </div>
+                        <button class="btn attack-btn" onclick="executeAttack('xss_attack')" id="xss-btn">
+                            <i class="fas fa-play me-2"></i>Launch XSS Attack
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Directory Traversal -->
+            <div class="col-lg-6 col-md-12 mb-4">
+                <div class="card attack-card severity-medium">
+                    <div class="card-body text-center">
+                        <div class="attack-icon http-attack">
+                            <i class="fas fa-folder-open"></i>
+                        </div>
+                        <h5 class="card-title">Directory Traversal</h5>
+                        <p class="card-text">Attempt to access restricted files and directories</p>
+                        <div class="mb-3">
+                            <span class="status-indicator status-ready" id="traversal-status"></span>
+                            <span id="traversal-status-text">Ready</span>
+                        </div>
+                        <button class="btn attack-btn" onclick="executeAttack('directory_traversal')" id="traversal-btn">
+                            <i class="fas fa-play me-2"></i>Launch Traversal Attack
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Port Scan -->
+            <div class="col-lg-6 col-md-12 mb-4">
+                <div class="card attack-card severity-low">
+                    <div class="card-body text-center">
+                        <div class="attack-icon network-attack">
+                            <i class="fas fa-search"></i>
+                        </div>
+                        <h5 class="card-title">Port Scan</h5>
+                        <p class="card-text">Perform network reconnaissance and service discovery</p>
+                        <div class="mb-3">
+                            <span class="status-indicator status-ready" id="portscan-status"></span>
+                            <span id="portscan-status-text">Ready</span>
+                        </div>
+                        <button class="btn attack-btn" onclick="executeAttack('port_scan')" id="portscan-btn">
+                            <i class="fas fa-play me-2"></i>Launch Port Scan
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Multi-Vector Attack -->
+            <div class="col-lg-6 col-md-12 mb-4">
+                <div class="card attack-card severity-high">
+                    <div class="card-body text-center">
+                        <div class="attack-icon brute-force">
+                            <i class="fas fa-bolt"></i>
+                        </div>
+                        <h5 class="card-title">Multi-Vector Attack</h5>
+                        <p class="card-text">Execute combined attack scenarios with multiple techniques</p>
+                        <div class="mb-3">
+                            <span class="status-indicator status-ready" id="multi-status"></span>
+                            <span id="multi-status-text">Ready</span>
+                        </div>
+                        <button class="btn attack-btn" onclick="executeAttack('multi_vector')" id="multi-btn">
+                            <i class="fas fa-play me-2"></i>Launch Multi-Attack
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Attack Log Output -->
+        <div class="row mt-4">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header">
+                        <h5><i class="fas fa-terminal me-2"></i>Attack Execution Log</h5>
+                        <button class="btn btn-sm btn-outline-secondary float-end" onclick="clearLog()">
+                            <i class="fas fa-trash me-1"></i>Clear Log
+                        </button>
+                    </div>
+                    <div class="card-body">
+                        <div class="log-output" id="attack-log">
+                            <div class="text-muted">Ready to execute attacks. Select an attack scenario above to begin.</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    
+    <script>
+        // Attack execution state
+        let attackInProgress = false;
+
+        // Attack type to ID mapping
+        const attackIdMap = {
+            'ssh_brute_force': 'ssh',
+            'sql_injection': 'sql',
+            'xss_attack': 'xss',
+            'directory_traversal': 'traversal',
+            'port_scan': 'portscan',
+            'multi_vector': 'multi'
+        };
+
+        // Attack execution functions
+        async function executeAttack(attackType) {
+            // Prevent multiple attacks running simultaneously
+            if (attackInProgress) {
+                logMessage(`[${new Date().toLocaleTimeString()}] ❌ Attack already in progress. Please wait...`);
+                return;
+            }
+
+            const idPrefix = attackIdMap[attackType];
+            if (!idPrefix) {
+                logMessage(`[${new Date().toLocaleTimeString()}] ❌ Unknown attack type: ${attackType}`);
+                return;
+            }
+
+            const statusElement = document.getElementById(idPrefix + '-status');
+            const statusTextElement = document.getElementById(idPrefix + '-status-text');
+            const buttonElement = document.getElementById(idPrefix + '-btn');
+
+            // Set attack in progress and disable all buttons
+            attackInProgress = true;
+            disableAllAttackButtons();
+
+            // Update UI to show attack is running
+            statusElement.className = 'status-indicator status-running';
+            statusTextElement.textContent = 'Running...';
+
+            const attackName = attackType.replace('_', ' ').toUpperCase();
+            logMessage(`[${new Date().toLocaleTimeString()}] 🚀 Starting ${attackName} attack...`);
+            logMessage(`[${new Date().toLocaleTimeString()}] 📡 Preparing attack payload...`);
+            
+            try {
+                const response = await fetch(`/api/execute-attack/${attackType}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                const result = await response.json();
+                
+                logMessage(`[${new Date().toLocaleTimeString()}] 📊 Processing attack results...`);
+
+                if (result.success) {
+                    statusElement.className = 'status-indicator status-complete';
+                    statusTextElement.textContent = 'Complete';
+
+                    logMessage(`[${new Date().toLocaleTimeString()}] ✅ Attack completed successfully!`);
+                    logMessage(`[${new Date().toLocaleTimeString()}] 📋 ATTACK SUMMARY:`);
+                    logMessage(`   🎯 Target: ${result.target}`);
+                    logMessage(`   🌐 Source IP: ${result.source_ip}`);
+                    logMessage(`   📍 Location: ${result.location}`);
+                    logMessage(`   🏢 ISP: ${result.isp}`);
+                    logMessage(`   ⚔️  Method: ${result.method}`);
+                    logMessage(`   💥 Payloads Sent: ${result.payloads_sent}`);
+                    logMessage(`   🔍 Detection Status: ${result.detected ? '🚨 DETECTED' : '👻 NOT DETECTED'}`);
+
+                    // Show successful credentials for SSH attacks
+                    if (result.successful_credentials && result.successful_credentials.length > 0) {
+                        logMessage(`   🔓 SUCCESSFUL LOGINS: ${result.successful_credentials.join(', ')}`);
+                        logMessage(`   ⚠️  SYSTEM COMPROMISED!`);
+                    } else if (result.attack_type === 'ssh_brute_force') {
+                        logMessage(`   🛡️  No successful logins - honeypot security held`);
+                    }
+
+                    logMessage(`   ⏰ Timestamp: ${new Date(result.timestamp).toLocaleString()}`);
+                    logMessage(`[${new Date().toLocaleTimeString()}] 📝 Check honeypot logs for detailed attack traces.`);
+                } else {
+                    statusElement.className = 'status-indicator status-error';
+                    statusTextElement.textContent = 'Error';
+                    logMessage(`[${new Date().toLocaleTimeString()}] ❌ Attack failed: ${result.error}`);
+                }
+            } catch (error) {
+                statusElement.className = 'status-indicator status-error';
+                statusTextElement.textContent = 'Error';
+                logMessage(`[${new Date().toLocaleTimeString()}] ❌ Network error: ${error.message}`);
+                logMessage(`[${new Date().toLocaleTimeString()}] 🔧 Please check if the honeypot is running.`);
+            }
+
+            // Re-enable all buttons after delay
+            setTimeout(() => {
+                attackInProgress = false;
+                enableAllAttackButtons();
+                statusElement.className = 'status-indicator status-ready';
+                statusTextElement.textContent = 'Ready';
+                logMessage(`[${new Date().toLocaleTimeString()}] 🔄 Ready for next attack.`);
+            }, 3000);
+        }
+
+        function disableAllAttackButtons() {
+            const attackTypes = Object.values(attackIdMap);
+            attackTypes.forEach(idPrefix => {
+                const button = document.getElementById(idPrefix + '-btn');
+                if (button) {
+                    button.disabled = true;
+                    button.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Please Wait...';
+                }
+            });
+        }
+
+        function enableAllAttackButtons() {
+            const buttonConfigs = {
+                'ssh': '<i class="fas fa-play me-2"></i>Launch SSH Attack',
+                'sql': '<i class="fas fa-play me-2"></i>Launch SQL Attack',
+                'xss': '<i class="fas fa-play me-2"></i>Launch XSS Attack',
+                'traversal': '<i class="fas fa-play me-2"></i>Launch Traversal Attack',
+                'portscan': '<i class="fas fa-play me-2"></i>Launch Port Scan',
+                'multi': '<i class="fas fa-play me-2"></i>Launch Multi-Attack'
+            };
+
+            Object.entries(buttonConfigs).forEach(([idPrefix, html]) => {
+                const button = document.getElementById(idPrefix + '-btn');
+                if (button) {
+                    button.disabled = false;
+                    button.innerHTML = html;
+                }
+            });
+        }
+        
+        function logMessage(message) {
+            const logElement = document.getElementById('attack-log');
+
+            // Add color coding based on message type
+            let messageClass = '';
+            if (message.includes('✅') || message.includes('🚀')) {
+                messageClass = 'text-success';
+            } else if (message.includes('❌') || message.includes('Error')) {
+                messageClass = 'text-danger';
+            } else if (message.includes('⚠️') || message.includes('Warning')) {
+                messageClass = 'text-warning';
+            } else if (message.includes('📋') || message.includes('SUMMARY')) {
+                messageClass = 'text-info fw-bold';
+            }
+
+            logElement.innerHTML += `<div class="${messageClass}">${message}</div>`;
+            logElement.scrollTop = logElement.scrollHeight;
+        }
+        
+        function clearLog() {
+            document.getElementById('attack-log').innerHTML = '<div class="text-muted">Log cleared. Ready for new attacks.</div>';
+        }
+        
+        // Auto-refresh attack status
+        setInterval(async () => {
+            try {
+                const response = await fetch('/api/attack-status');
+                const status = await response.json();
+                // Update status indicators based on response
+            } catch (error) {
+                console.log('Status update failed:', error);
+            }
+        }, 5000);
+    </script>
+</body>
+</html>

@@ -1,20 +1,107 @@
 """
-SSH Honeypot implementation for PHIDS
+SSH Honeypot implementation for PHIDS using Paramiko
 """
 import asyncio
 import logging
 import base64
 import hashlib
 import time
+import threading
+import socket
 from datetime import datetime
 from config import HONEYPOT_CONFIG
 from .base_honeypot import BaseHoneypot
 from ..core.enhanced_logger import EnhancedHoneypotLogger, ConnectionStatus, ServiceType
 
+try:
+    import paramiko
+    PARAMIKO_AVAILABLE = True
+except ImportError:
+    PARAMIKO_AVAILABLE = False
+    logging.warning("Paramiko not available - SSH honeypot will use fallback implementation")
+
+
+class SSHServerInterface(paramiko.ServerInterface):
+    """Paramiko SSH server interface for the honeypot"""
+
+    def __init__(self, honeypot, session_id, client_info):
+        self.honeypot = honeypot
+        self.session_id = session_id
+        self.client_info = client_info
+        self.authenticated = False
+        self.username = None
+        self.password = None
+
+    def check_channel_request(self, kind, chanid):
+        if kind == 'session':
+            return paramiko.OPEN_SUCCEEDED
+        return paramiko.OPEN_FAILED_ADMINISTRATIVELY_PROHIBITED
+
+    def check_auth_password(self, username, password):
+        """Check password authentication"""
+        self.username = username
+        self.password = password
+
+        # Check against fake users
+        auth_success = username in self.honeypot.fake_users and self.honeypot.fake_users[username] == password
+
+        # Log authentication attempt with correct success status
+        self.honeypot.enhanced_logger.log_authentication_attempt(
+            session_id=self.session_id,
+            username=username,
+            password=password,
+            method="password",
+            success=auth_success
+        )
+
+        # Log authentication event to database
+        auth_event_data = {
+            'timestamp': datetime.now(),
+            'source_ip': self.client_info['source_ip'],
+            'source_port': self.client_info['source_port'],
+            'destination_port': self.honeypot.config['port'],
+            'service_type': 'ssh',
+            'session_id': self.session_id,
+            'username': username,
+            'password': password,
+            'auth_method': 'password',
+            'success': auth_success,
+            'failure_reason': None if auth_success else 'Invalid credentials',
+            'connection_data': {
+                'client_version': getattr(self, 'client_version', 'unknown'),
+                'auth_type': 'password'
+            }
+        }
+
+        # Schedule database logging (async operation)
+        import asyncio
+        if hasattr(self.honeypot, 'main_loop') and self.honeypot.main_loop:
+            asyncio.run_coroutine_threadsafe(
+                self.honeypot.db_manager.log_authentication_event(auth_event_data),
+                self.honeypot.main_loop
+            )
+
+        if auth_success:
+            self.authenticated = True
+            self.honeypot.logger.info(f"SSH authentication SUCCESS: {username}:{password}")
+            return paramiko.AUTH_SUCCESSFUL
+        else:
+            self.honeypot.logger.info(f"SSH authentication FAILED: {username}:{password}")
+            return paramiko.AUTH_FAILED
+
+    def get_allowed_auths(self, username):
+        return 'password'
+
+    def check_channel_shell_request(self, channel):
+        return True
+
+    def check_channel_pty_request(self, channel, term, width, height, pixelwidth, pixelheight, modes):
+        return True
+
 
 class SSHHoneypot(BaseHoneypot):
-    """SSH Honeypot that simulates an SSH server"""
-    
+    """SSH Honeypot that simulates an SSH server using Paramiko"""
+
     def __init__(self):
         config = HONEYPOT_CONFIG["ssh"]
         super().__init__("ssh", config)
@@ -27,51 +114,100 @@ class SSHHoneypot(BaseHoneypot):
         }
         # Initialize enhanced logger
         self.enhanced_logger = EnhancedHoneypotLogger("SSH", self.logger)
+
+        # Generate or load SSH host key
+        self.host_key = None
+        self.main_loop = None  # Store reference to main event loop
+        if PARAMIKO_AVAILABLE:
+            self._setup_host_key()
+
+    def _setup_host_key(self):
+        """Setup SSH host key for the server"""
+        try:
+            # Generate a temporary RSA key for the honeypot
+            self.host_key = paramiko.RSAKey.generate(2048)
+            self.logger.info("Generated temporary SSH host key")
+        except Exception as e:
+            self.logger.error(f"Failed to generate SSH host key: {e}")
+            self.host_key = None
         
     async def start(self):
         """Start the SSH honeypot server"""
         if not self.is_enabled():
             self.logger.info("SSH honeypot is disabled")
             return
-        
+
+        if not PARAMIKO_AVAILABLE:
+            self.logger.error("Paramiko not available - cannot start SSH honeypot")
+            return
+
+        if not self.host_key:
+            self.logger.error("No SSH host key available - cannot start SSH honeypot")
+            return
+
         self.logger.info(f"Starting SSH honeypot on {self.config['bind_address']}:{self.config['port']}")
-        
+
         try:
-            self.server = await asyncio.start_server(
-                self.handle_connection,
-                self.config["bind_address"],
-                self.config["port"]
-            )
+            # Store reference to main event loop
+            self.main_loop = asyncio.get_event_loop()
+
+            # Start the server in a separate thread since paramiko is synchronous
             self.running = True
+            self.server_thread = threading.Thread(target=self._run_server, daemon=True)
+            self.server_thread.start()
             self.logger.info(f"SSH honeypot started successfully")
-            
-            async with self.server:
-                await self.server.serve_forever()
-                
+
+            # Keep the async method running
+            while self.running:
+                await asyncio.sleep(1)
+
         except Exception as e:
             self.logger.error(f"Failed to start SSH honeypot: {e}")
             self.running = False
+
+    def _run_server(self):
+        """Run the SSH server in a separate thread"""
+        try:
+            # Create socket
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            sock.bind((self.config["bind_address"], self.config["port"]))
+            sock.listen(100)
+
+            self.logger.info(f"SSH honeypot listening on {self.config['bind_address']}:{self.config['port']}")
+
+            while self.running:
+                try:
+                    client_sock, addr = sock.accept()
+                    self.logger.info(f"SSH connection from {addr[0]}:{addr[1]}")
+
+                    # Handle connection in a separate thread
+                    client_thread = threading.Thread(
+                        target=self._handle_client,
+                        args=(client_sock, addr),
+                        daemon=True
+                    )
+                    client_thread.start()
+
+                except Exception as e:
+                    if self.running:
+                        self.logger.error(f"Error accepting SSH connection: {e}")
+
+        except Exception as e:
+            self.logger.error(f"SSH server error: {e}")
+        finally:
+            try:
+                sock.close()
+            except:
+                pass
     
-    async def stop(self):
-        """Stop the SSH honeypot server"""
-        self.logger.info("Stopping SSH honeypot")
-        self.running = False
-        
-        if self.server:
-            self.server.close()
-            await self.server.wait_closed()
-        
-        # Close all active connections
-        for session_id in list(self.active_connections.keys()):
-            connection = self.active_connections[session_id]
-            await self.close_connection(connection.get('writer'), session_id)
-        
-        self.logger.info("SSH honeypot stopped")
-    
-    async def handle_connection(self, reader, writer):
-        """Handle incoming SSH connections"""
+    def _handle_client(self, client_sock, addr):
+        """Handle individual SSH client connections"""
         session_id = self.generate_session_id()
-        client_info = self.get_client_info(writer)
+        client_info = {
+            'source_ip': addr[0],
+            'source_port': addr[1]
+        }
 
         # Start enhanced connection logging
         connection_log = self.enhanced_logger.start_connection_log(
@@ -81,8 +217,7 @@ class SSHHoneypot(BaseHoneypot):
             destination_port=self.config['port'],
             service_type=ServiceType.SSH
         )
-        
-        # Store connection info with proper timestamp and enhanced metadata
+
         start_time = datetime.now()
         connection_data = {
             'session_id': session_id,
@@ -91,7 +226,7 @@ class SSHHoneypot(BaseHoneypot):
             'destination_port': self.config['port'],
             'service_type': 'ssh',
             'start_time': start_time,
-            'timestamp': start_time,  # Explicit timestamp for database logging
+            'timestamp': start_time,
             'commands': [],
             'payloads': [],
             'connection_data': {
@@ -109,495 +244,398 @@ class SSHHoneypot(BaseHoneypot):
                 'recommendations': []
             },
             'user_agent': f"SSH-Client-{client_info['source_ip']}",
-            'connection_status': 'FAILED',  # Default to FAILED, will be updated if successful
+            'connection_status': 'FAILED',
             'failure_reason': 'Connection in progress'
         }
-        
-        self.active_connections[session_id] = {
-            'reader': reader,
-            'writer': writer,
-            'data': connection_data
-        }
-
-        # Don't log initial connection - wait for actual result
-        # The enhanced logging will handle the final status after session simulation
 
         connection_status = ConnectionStatus.FAILED
         failure_reason = None
 
         try:
-            # Attempt SSH session simulation
-            session_result = await self.simulate_ssh_session(reader, writer, connection_data)
+            # Create SSH transport
+            transport = paramiko.Transport(client_sock)
+            transport.add_server_key(self.host_key)
 
-            # Debug logging to understand what's happening
-            self.logger.debug(f"SSH session result for {session_id}: {session_result}")
+            # Create server interface
+            server_interface = SSHServerInterface(self, session_id, client_info)
 
-            # Improved connection status classification
-            if session_result.get('timeout', False):
-                connection_status = ConnectionStatus.TIMEOUT
-                failure_reason = session_result.get('reason', "Session timeout during interaction")
-                self.logger.debug(f"Classified as TIMEOUT: {failure_reason}")
-            elif session_result.get('completed', False) and session_result.get('authenticated', False):
-                # Only SUCCESS if both completed AND authenticated
-                connection_status = ConnectionStatus.SUCCESS
-                failure_reason = None
-                self.logger.debug(f"Classified as SUCCESS: completed={session_result.get('completed')}, authenticated={session_result.get('authenticated')}")
-            elif session_result.get('protocol_negotiated', False):
-                # Protocol worked but auth failed - this is FAILED, not SUCCESS
+            # Start SSH server
+            transport.start_server(server=server_interface)
+
+            # Wait for authentication
+            channel = transport.accept(timeout=30)
+            if channel is None:
+                failure_reason = "No channel established"
                 connection_status = ConnectionStatus.FAILED
-                failure_reason = session_result.get('reason', "Authentication or interaction failed")
-                self.logger.debug(f"Classified as FAILED (protocol negotiated): {failure_reason}")
-            elif session_result.get('interaction_level') == 'protocol':
-                # Protocol negotiation failed - this is FAILED
-                connection_status = ConnectionStatus.FAILED
-                failure_reason = session_result.get('reason', "Protocol negotiation failed")
-                self.logger.debug(f"Classified as FAILED (protocol level): {failure_reason}")
             else:
-                # No meaningful interaction - this is ERROR
-                connection_status = ConnectionStatus.ERROR
-                failure_reason = session_result.get('reason', "No meaningful interaction occurred")
-                self.logger.debug(f"Classified as ERROR: {failure_reason}")
+                if server_interface.authenticated:
+                    connection_status = ConnectionStatus.SUCCESS
+                    failure_reason = None
 
-        except asyncio.TimeoutError:
+                    # Handle shell session
+                    self._handle_shell_session(channel, connection_data, server_interface)
+                else:
+                    connection_status = ConnectionStatus.FAILED
+                    failure_reason = "Authentication failed"
+
+        except paramiko.SSHException as e:
+            connection_status = ConnectionStatus.ERROR
+            failure_reason = f"SSH protocol error: {str(e)}"
+            self.logger.warning(f"SSH protocol error for {session_id}: {e}")
+        except socket.timeout:
             connection_status = ConnectionStatus.TIMEOUT
             failure_reason = "Connection timeout"
             self.logger.warning(f"SSH connection {session_id} timed out")
-        except ConnectionResetError:
-            connection_status = ConnectionStatus.FAILED
-            failure_reason = "Connection reset by client"
-            self.logger.info(f"SSH connection {session_id} reset by client")
         except Exception as e:
             connection_status = ConnectionStatus.ERROR
-            failure_reason = f"Protocol error: {str(e)}"
+            failure_reason = f"Unexpected error: {str(e)}"
             self.logger.error(f"Error handling SSH connection {session_id}: {e}")
         finally:
-            # End enhanced logging with outcome
+            try:
+                client_sock.close()
+            except:
+                pass
+
+            # End enhanced logging
             enhanced_log = self.enhanced_logger.end_connection_log(
                 session_id=session_id,
                 status=connection_status,
                 reason=failure_reason
             )
 
-            # Log the complete session (existing system)
+            # Complete connection data
             connection_data['end_time'] = datetime.now()
             connection_data['duration'] = (connection_data['end_time'] - connection_data['start_time']).total_seconds()
-
-            # Add enhanced logging data to connection_data for database
             connection_data['connection_status'] = connection_status.value
             connection_data['failure_reason'] = failure_reason
             if enhanced_log:
                 connection_data['enhanced_log'] = enhanced_log.to_dict()
 
-            # Debug log what we're sending
-            self.logger.debug(f"Logging connection data for {session_id}: status={connection_status.value}, duration={connection_data['duration']}")
+            # Log final connection status
+            status_msg = f"SSH Connection {connection_status.value.upper()}"
+            if connection_status == ConnectionStatus.SUCCESS:
+                self.logger.info(f"{status_msg}: {client_info['source_ip']} -> Full session with authentication and shell access")
+            elif connection_status == ConnectionStatus.FAILED:
+                self.logger.warning(f"{status_msg}: {client_info['source_ip']} -> {failure_reason}")
+            elif connection_status == ConnectionStatus.ERROR:
+                self.logger.error(f"{status_msg}: {client_info['source_ip']} -> {failure_reason}")
+            elif connection_status == ConnectionStatus.TIMEOUT:
+                self.logger.warning(f"{status_msg}: {client_info['source_ip']} -> {failure_reason}")
 
-            await self.log_connection(connection_data)
-            await self.close_connection(writer, session_id)
-    
-    async def simulate_ssh_session(self, reader, writer, connection_data):
-        """Simulate an SSH session"""
-        session_id = connection_data['session_id']
-        self.logger.debug(f"Starting SSH session simulation for {session_id}")
-
-        session_result = {
-            'completed': False,
-            'timeout': False,
-            'reason': None,
-            'authenticated': False,
-            'protocol_negotiated': False,
-            'interaction_level': 'none'  # none, protocol, auth, shell
-        }
-
-        try:
-            # Send SSH banner
-            self.logger.debug(f"Sending SSH banner for {session_id}")
-            await self.send_banner(writer, self.config["banner"])
-
-            # SSH protocol negotiation
-            self.logger.debug(f"Starting protocol negotiation for {session_id}")
-            negotiation_success = await self.ssh_protocol_negotiation(reader, writer, connection_data)
-            self.logger.debug(f"Protocol negotiation result for {session_id}: {negotiation_success}")
-
-            if not negotiation_success:
-                session_result['reason'] = "Protocol negotiation failed"
-                session_result['interaction_level'] = 'protocol'
-                self.logger.debug(f"Returning early due to protocol negotiation failure for {session_id}")
-                return session_result
-
-            session_result['protocol_negotiated'] = True
-            session_result['interaction_level'] = 'protocol'
-
-            # Authentication phase
-            authenticated = await self.ssh_authentication(reader, writer, connection_data)
-            session_result['authenticated'] = authenticated
-            session_result['interaction_level'] = 'auth'
-
-            if authenticated:
-                # Interactive shell simulation
-                session_result['interaction_level'] = 'shell'
-                shell_result = await self.ssh_shell_simulation(reader, writer, connection_data)
-                session_result['completed'] = shell_result.get('completed', True)
-
-                # Only mark as truly successful if shell interaction completed
-                if session_result['completed']:
-                    session_result['reason'] = "Session completed successfully"
-                else:
-                    session_result['reason'] = shell_result.get('reason', "Shell interaction failed")
-            else:
-                # Authentication failed - this is a FAILED connection, not SUCCESS
-                session_result['reason'] = "Authentication failed - no valid credentials provided"
-                session_result['completed'] = False  # Authentication failure is NOT completion
-
-            return session_result
-
-        except asyncio.TimeoutError:
-            session_result['timeout'] = True
-            session_result['reason'] = "Session timeout"
-            self.logger.debug(f"Session timeout for {session_id}")
-            return session_result
-        except (ConnectionResetError, BrokenPipeError) as e:
-            session_result['reason'] = f"Client disconnected: {str(e)}"
-            self.logger.debug(f"Client disconnected for {session_id}: {e}")
-            return session_result
-        except Exception as e:
-            session_result['reason'] = f"Session error: {str(e)}"
-            self.logger.debug(f"Session error for {session_id}: {e}")
-            return session_result
-    
-    async def ssh_protocol_negotiation(self, reader, writer, connection_data):
-        """Handle SSH protocol negotiation"""
-        try:
-            # Read client banner with timeout
-            client_banner = await asyncio.wait_for(
-                self.read_data(reader, 255),
-                timeout=10.0
-            )
-
-            if not client_banner:
-                self.logger.warning("No client banner received")
-                return False
-
-            banner_str = client_banner.decode('utf-8', errors='ignore').strip()
-            connection_data['connection_data']['client_banner'] = banner_str
-            self.logger.info(f"Client banner: {banner_str}")
-
-            # Validate SSH banner format
-            if not banner_str.startswith('SSH-'):
-                self.logger.warning(f"Invalid SSH banner format: {banner_str}")
-                return False
-
-            # Send server banner
-            server_banner = f"SSH-2.0-OpenSSH_7.6p1 Ubuntu-4ubuntu0.3"
-            writer.write(server_banner.encode() + b'\r\n')
-            await writer.drain()
-
-            # Wait for key exchange initiation with timeout
-            try:
-                kex_data = await asyncio.wait_for(
-                    self.read_data(reader, 1024),
-                    timeout=15.0
-                )
-            except asyncio.TimeoutError:
-                self.logger.warning("Timeout waiting for key exchange initiation")
-                return False
-
-            if not kex_data:
-                self.logger.warning("No key exchange data received")
-                return False
-
-            # Log key exchange data
-            connection_data['payloads'].append({
-                'type': 'kex_init',
-                'data': base64.b64encode(kex_data).decode(),
-                'timestamp': datetime.now().isoformat()
-            })
-
-            # Send fake key exchange response
-            fake_kex = b'\x00\x00\x01\x2c\x0a\x14' + b'\x00' * 294  # Simplified KEX
-            try:
-                writer.write(fake_kex)
-                await writer.drain()
-            except (ConnectionResetError, BrokenPipeError) as e:
-                self.logger.warning(f"Client disconnected during key exchange: {e}")
-                return False
-
-            # Verify client is still connected by attempting to read next message
-            try:
-                next_data = await asyncio.wait_for(
-                    self.read_data(reader, 64),
-                    timeout=5.0
-                )
-
-                # If we get data, protocol negotiation was successful
-                if next_data:
-                    self.logger.info("SSH protocol negotiation successful")
-                    return True
-                else:
-                    self.logger.warning("Client disconnected after key exchange")
-                    return False
-
-            except asyncio.TimeoutError:
-                # Timeout is acceptable here - client might be processing
-                self.logger.info("SSH protocol negotiation completed (client processing)")
-                return True
-
-        except asyncio.TimeoutError:
-            self.logger.warning("SSH protocol negotiation timeout")
-            return False
-        except (ConnectionResetError, BrokenPipeError) as e:
-            self.logger.warning(f"Client disconnected during protocol negotiation: {e}")
-            return False
-        except Exception as e:
-            self.logger.error(f"SSH protocol negotiation error: {e}")
-            return False
-    
-    async def ssh_authentication(self, reader, writer, connection_data):
-        """Handle SSH authentication attempts"""
-        max_attempts = 3
-        attempts = 0
-
-        while attempts < max_attempts:
-            try:
-                # Read authentication request with timeout
-                auth_data = await asyncio.wait_for(
-                    self.read_data(reader, 1024),
-                    timeout=30.0
-                )
-
-                if not auth_data:
-                    self.logger.warning("No authentication data received")
-                    break
-
-                attempts += 1
-                
-                # Parse authentication attempt (simplified)
-                auth_str = auth_data.decode('utf-8', errors='ignore')
-                
-                # Look for username/password patterns
-                username = self.extract_username(auth_str)
-                password = self.extract_password(auth_str)
-                
-                if username or password:
-                    # Check if credentials match our fake users
-                    auth_success = username in self.fake_users and self.fake_users[username] == password
-
-                    # Log authentication attempt with enhanced logger
-                    self.enhanced_logger.log_authentication_attempt(
-                        session_id=connection_data['session_id'],
-                        username=username,
-                        password=password,
-                        method="password",
-                        success=auth_success
+            # Log connection asynchronously using main event loop
+            if self.main_loop and not self.main_loop.is_closed():
+                try:
+                    asyncio.run_coroutine_threadsafe(
+                        self.log_connection(connection_data),
+                        self.main_loop
                     )
+                except Exception as e:
+                    self.logger.error(f"Failed to log connection asynchronously: {e}")
+            else:
+                # Fallback: log synchronously
+                self.logger.warning("Main event loop not available, skipping async connection logging")
 
-                    auth_attempt = {
-                        'attempt': attempts,
-                        'username': username,
-                        'password': password,
-                        'timestamp': datetime.now().isoformat(),
-                        'success': auth_success
-                    }
+    async def handle_connection(self, reader, writer):
+        """Handle incoming connections - required by base class but not used in paramiko implementation"""
+        # This method is required by the abstract base class but not used
+        # since we're using paramiko's synchronous interface
+        pass
 
-                    connection_data['commands'].append(auth_attempt)
-                    
-                    # Check if credentials match our fake users
-                    if username in self.fake_users and self.fake_users[username] == password:
-                        auth_attempt['success'] = True
-                        # Send success response
-                        writer.write(b'\x00\x00\x00\x0c\x0a\x34\x00\x00\x00\x00\x00\x00\x00\x00')
-                        await writer.drain()
-                        return True
-                
-                # Send failure response
-                writer.write(b'\x00\x00\x00\x0c\x0a\x33\x00\x00\x00\x00\x00\x00\x00\x00')
-                await writer.drain()
-                
-            except asyncio.TimeoutError:
-                self.logger.warning("Authentication timeout - client not responding")
-                break
-            except (ConnectionResetError, BrokenPipeError) as e:
-                self.logger.warning(f"Client disconnected during authentication: {e}")
-                break
-            except Exception as e:
-                self.logger.error(f"SSH authentication error: {e}")
-                break
+    async def stop(self):
+        """Stop the SSH honeypot server"""
+        self.logger.info("Stopping SSH honeypot")
+        self.running = False
 
-        return False
+        # Wait for server thread to finish
+        if hasattr(self, 'server_thread') and self.server_thread.is_alive():
+            self.server_thread.join(timeout=5)
+
+        # Close all active connections
+        for session_id in list(self.active_connections.keys()):
+            connection = self.active_connections[session_id]
+            if 'writer' in connection:
+                await self.close_connection(connection.get('writer'), session_id)
+
+        self.logger.info("SSH honeypot stopped")
     
-    async def ssh_shell_simulation(self, reader, writer, connection_data):
-        """Simulate an interactive SSH shell"""
-        self.logger.info("Starting SSH shell simulation")
-        shell_result = {'completed': True, 'commands_executed': 0}
-
+    def _handle_shell_session(self, channel, connection_data, server_interface):
+        """Handle interactive shell session"""
         try:
-            # Send shell prompt
-            prompt = b"root@honeypot:~# "
-            writer.write(prompt)
-            await writer.drain()
+            # Send welcome message
+            channel.send("Welcome to Ubuntu 18.04.3 LTS (GNU/Linux 4.15.0-96-generic x86_64)\r\n\r\n")
+            channel.send("root@honeypot:~# ")
 
             # Set timeout for shell interaction
-            timeout_duration = 300  # 5 minutes
-            start_time = time.time()
+            channel.settimeout(300)  # 5 minutes
+
+            command_buffer = ""
 
             while True:
                 try:
-                    # Check for timeout
-                    if time.time() - start_time > timeout_duration:
-                        shell_result['completed'] = False
-                        shell_result['reason'] = "Shell session timeout"
+                    # Read data from channel
+                    data = channel.recv(1024)
+                    if not data:
                         break
 
-                    # Read command with timeout
-                    command_data = await asyncio.wait_for(
-                        self.read_data(reader, 1024),
-                        timeout=30.0
-                    )
+                    # Decode and process input
+                    try:
+                        text = data.decode('utf-8')
+                    except UnicodeDecodeError:
+                        text = data.decode('utf-8', errors='ignore')
 
-                    if not command_data:
-                        break
+                    # Handle special characters
+                    for char in text:
+                        if char == '\r' or char == '\n':
+                            # Send newline echo
+                            channel.send("\r\n")
 
-                    command = self.parse_command(command_data)
-                    if command:
-                        # Log command execution with enhanced logger
-                        self.enhanced_logger.log_command_execution(
-                            session_id=connection_data['session_id'],
-                            command=command,
-                            success=True
-                        )
+                            # Command completed
+                            if command_buffer.strip():
+                                command = command_buffer.strip()
 
-                        connection_data['commands'].append({
-                            'command': command,
-                            'timestamp': datetime.now().isoformat()
-                        })
+                                # Log command execution
+                                self.enhanced_logger.log_command_execution(
+                                    session_id=connection_data['session_id'],
+                                    command=command,
+                                    success=True
+                                )
 
-                        shell_result['commands_executed'] += 1
+                                connection_data['commands'].append({
+                                    'command': command,
+                                    'timestamp': datetime.now().isoformat()
+                                })
 
-                        # Simulate command responses
-                        response = self.simulate_command_response(command)
-                        if response:
-                            writer.write(response.encode() + b'\r\n')
-                            await writer.drain()
+                                # Analyze command for attack patterns
+                                analysis = self.analyze_ssh_command(command, connection_data)
+                                if analysis['suspicious']:
+                                    connection_data['connection_data']['attack_indicators'].extend(analysis['attack_indicators'])
+                                    connection_data['connection_data']['severity'] = analysis['severity']
+                                    connection_data['connection_data']['attack_classification'] = analysis['attack_type']
+                                    connection_data['connection_data']['recommendations'] = analysis['recommendations']
+                                    connection_data['connection_data']['suspicious_activity'] = True
 
-                        # Send new prompt
-                        writer.write(prompt)
-                        await writer.drain()
+                                # Send command response
+                                response = self.simulate_command_response(command)
+                                if response is not None:
+                                    channel.send(response + "\r\n")
+                                    channel.send("root@honeypot:~# ")
+                                else:
+                                    # Exit command
+                                    break
 
-                except asyncio.TimeoutError:
-                    # Client inactive, end session
+                                command_buffer = ""
+                            else:
+                                channel.send("root@honeypot:~# ")
+                        elif char == '\x7f' or char == '\x08':  # Backspace
+                            if command_buffer:
+                                command_buffer = command_buffer[:-1]
+                                # Echo backspace (move cursor back, space, move back again)
+                                channel.send("\x08 \x08")
+                        elif char == '\x03':  # Ctrl+C
+                            command_buffer = ""
+                            channel.send("^C\r\nroot@honeypot:~# ")
+                        elif char == '\x04':  # Ctrl+D (EOF)
+                            # Exit on Ctrl+D
+                            break
+                        elif ord(char) >= 32:  # Printable characters
+                            command_buffer += char
+                            # Echo the character back to the client
+                            channel.send(char)
+
+                except socket.timeout:
+                    self.logger.info(f"SSH shell session timeout for {connection_data['session_id']}")
                     break
                 except Exception as e:
-                    self.logger.error(f"SSH shell simulation error: {e}")
-                    shell_result['completed'] = False
-                    shell_result['reason'] = f"Shell error: {str(e)}"
+                    self.logger.error(f"Error in SSH shell session: {e}")
                     break
 
         except Exception as e:
-            shell_result['completed'] = False
-            shell_result['reason'] = f"Shell initialization error: {str(e)}"
+            self.logger.error(f"SSH shell session error: {e}")
+        finally:
+            try:
+                channel.close()
+            except:
+                pass
+    
 
-        return shell_result
-    
-    def extract_username(self, auth_str):
-        """Extract username from authentication string"""
-        # Simple pattern matching for username
-        patterns = [r'user[:\s]+(\w+)', r'login[:\s]+(\w+)', r'username[:\s]+(\w+)']
-        import re
-        
-        for pattern in patterns:
-            match = re.search(pattern, auth_str, re.IGNORECASE)
-            if match:
-                return match.group(1)
-        
-        # Fallback: look for common usernames
-        common_users = ['root', 'admin', 'user', 'test', 'ubuntu']
-        for user in common_users:
-            if user in auth_str.lower():
-                return user
-        
-        return "unknown"
-    
-    def extract_password(self, auth_str):
-        """Extract password from authentication string"""
-        # Simple pattern matching for password
-        patterns = [r'pass[:\s]+(\w+)', r'password[:\s]+(\w+)', r'pwd[:\s]+(\w+)']
-        import re
-        
-        for pattern in patterns:
-            match = re.search(pattern, auth_str, re.IGNORECASE)
-            if match:
-                return match.group(1)
-        
-        return "unknown"
+
+
+
     
     def simulate_command_response(self, command):
         """Simulate responses to common commands"""
         command = command.lower().strip()
-        
-        responses = {
+        command_parts = command.split()
+        base_command = command_parts[0] if command_parts else ""
+
+        # Handle exit commands first
+        if base_command in ['exit', 'logout']:
+            return None
+
+        # Define base command responses
+        base_responses = {
             'ls': 'bin  boot  dev  etc  home  lib  media  mnt  opt  proc  root  run  sbin  srv  sys  tmp  usr  var',
             'pwd': '/root',
             'whoami': 'root',
             'id': 'uid=0(root) gid=0(root) groups=0(root)',
-            'uname -a': 'Linux honeypot 4.15.0-96-generic #97-Ubuntu SMP Wed Apr 1 03:25:46 UTC 2020 x86_64 x86_64 x86_64 GNU/Linux',
-            'cat /etc/passwd': 'root:x:0:0:root:/root:/bin/bash\ndaemon:x:1:1:daemon:/usr/sbin:/usr/sbin/nologin',
-            'ps aux': 'USER       PID %CPU %MEM    VSZ   RSS TTY      STAT START   TIME COMMAND\nroot         1  0.0  0.1  77616  8784 ?        Ss   10:00   0:01 /sbin/init',
-            'netstat -an': 'Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State',
-            'exit': None,  # Will close connection
-            'logout': None,  # Will close connection
+            'uname': 'Linux honeypot 4.15.0-96-generic #97-Ubuntu SMP Wed Apr 1 03:25:46 UTC 2020 x86_64 x86_64 x86_64 GNU/Linux',
+            'ps': 'USER       PID %CPU %MEM    VSZ   RSS TTY      STAT START   TIME COMMAND\nroot         1  0.0  0.1  77616  8784 ?        Ss   10:00   0:01 /sbin/init\nroot       123  0.0  0.0  12345  1234 pts/0    S    10:30   0:00 bash',
+            'netstat': 'Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State\ntcp        0      0 0.0.0.0:22              0.0.0.0:*               LISTEN\ntcp        0      0 0.0.0.0:80              0.0.0.0:*               LISTEN',
+            'cat': self._handle_cat_command(command_parts),
+            'wget': 'bash: wget: command not found',
+            'curl': 'bash: curl: command not found',
+            'nc': 'bash: nc: command not found',
+            'nmap': 'bash: nmap: command not found',
+            'python': 'Python 2.7.17 (default, Apr 10 2020, 13:48:39)\n[GCC 7.5.0] on linux2\nType "help", "copyright", "credits" or "license" for more information.\n>>> ',
+            'python3': 'Python 3.6.9 (default, Apr 18 2020, 01:56:04)\n[GCC 8.4.0] on linux\nType "help", "copyright", "credits" or "license" for more information.\n>>> ',
+            'chmod': '',  # Silent success for chmod commands
+            'mkdir': '',  # Silent success for mkdir commands
+            'touch': '',  # Silent success for touch commands
+            'echo': self._handle_echo_command(command_parts),
+            'history': '    1  whoami\n    2  ls -la\n    3  cat /etc/passwd\n    4  history',
+            'w': ' 10:30:15 up  1:30,  1 user,  load average: 0.00, 0.01, 0.05\nUSER     TTY      FROM             LOGIN@   IDLE   JCPU   PCPU WHAT\nroot     pts/0    192.168.1.100    10:00    0.00s  0.04s  0.00s w',
+            'who': 'root     pts/0        2020-04-01 10:00 (192.168.1.100)',
+            'uptime': ' 10:30:15 up  1:30,  1 user,  load average: 0.00, 0.01, 0.05',
+            'df': 'Filesystem     1K-blocks    Used Available Use% Mounted on\n/dev/sda1       20971520 5242880  15728640  26% /\ntmpfs            1048576       0   1048576   0% /tmp',
+            'free': '              total        used        free      shared  buff/cache   available\nMem:        2097152      524288     1048576        8192      524288     1572864\nSwap:       1048576           0     1048576',
+            'ifconfig': 'eth0: flags=4163<UP,BROADCAST,RUNNING,MULTICAST>  mtu 1500\n        inet 192.168.1.100  netmask 255.255.255.0  broadcast 192.168.1.255\n        ether 00:0c:29:12:34:56  txqueuelen 1000  (Ethernet)',
+            'ip': 'bash: ip: command not found'
         }
-        
-        if command in ['exit', 'logout']:
-            return None
-        
-        return responses.get(command, f"bash: {command}: command not found")
+
+        # Handle specific command patterns
+        if base_command == 'cat':
+            return self._handle_cat_command(command_parts)
+        elif base_command == 'echo':
+            return self._handle_echo_command(command_parts)
+        elif base_command in base_responses:
+            response = base_responses[base_command]
+            return response if isinstance(response, str) else response
+        else:
+            return f"bash: {base_command}: command not found"
+
+    def _handle_cat_command(self, command_parts):
+        """Handle cat command with different file arguments"""
+        if len(command_parts) < 2:
+            return "cat: missing file operand"
+
+        file_path = command_parts[1]
+
+        file_responses = {
+            '/etc/passwd': 'root:x:0:0:root:/root:/bin/bash\ndaemon:x:1:1:daemon:/usr/sbin:/usr/sbin/nologin\nbin:x:2:2:bin:/bin:/usr/sbin/nologin\nsys:x:3:3:sys:/dev:/usr/sbin/nologin\nsync:x:4:65534:sync:/bin:/bin/sync\ngames:x:5:60:games:/usr/games:/usr/sbin/nologin\nman:x:6:12:man:/var/cache/man:/usr/sbin/nologin\nlp:x:7:7:lp:/var/spool/lpd:/usr/sbin/nologin\nmail:x:8:8:mail:/var/mail:/usr/sbin/nologin\nnews:x:9:9:news:/var/spool/news:/usr/sbin/nologin\nuucp:x:10:10:uucp:/var/spool/uucp:/usr/sbin/nologin\nproxy:x:13:13:proxy:/bin:/usr/sbin/nologin\nwww-data:x:33:33:www-data:/var/www:/usr/sbin/nologin\nbackup:x:34:34:backup:/var/backups:/usr/sbin/nologin\nlist:x:38:38:Mailing List Manager:/var/list:/usr/sbin/nologin\nirc:x:39:39:ircd:/var/run/ircd:/usr/sbin/nologin\ngnats:x:41:41:Gnats Bug-Reporting System (admin):/var/lib/gnats:/usr/sbin/nologin\nnobody:x:65534:65534:nobody:/nonexistent:/usr/sbin/nologin\nsystemd-network:x:100:102:systemd Network Management,,,:/run/systemd/netif:/usr/sbin/nologin\nsystemd-resolve:x:101:103:systemd Resolver,,,:/run/systemd/resolve:/usr/sbin/nologin\nsyslog:x:102:106::/home/syslog:/usr/sbin/nologin\nmessagebus:x:103:107::/nonexistent:/usr/sbin/nologin\n_apt:x:104:65534::/nonexistent:/usr/sbin/nologin\nlxd:x:105:65534::/var/lib/lxd/:/bin/false\nuuidd:x:106:110::/run/uuidd:/usr/sbin/nologin\ndnsmasq:x:107:65534:dnsmasq,,,:/var/lib/misc:/usr/sbin/nologin\nlandscape:x:108:112::/var/lib/landscape:/usr/sbin/nologin\npollinate:x:109:1::/var/cache/pollinate:/bin/false\nsshd:x:110:65534::/run/sshd:/usr/sbin/nologin\nubuntu:x:1000:1000:Ubuntu,,,:/home/ubuntu:/bin/bash',
+            '/etc/shadow': 'cat: /etc/shadow: Permission denied',
+            '/etc/hosts': '127.0.0.1\tlocalhost\n127.0.1.1\thoneypot\n\n# The following lines are desirable for IPv6 capable hosts\n::1     ip6-localhost ip6-loopback\nfe00::0 ip6-localnet\nff00::0 ip6-mcastprefix\nff02::1 ip6-allnodes\nff02::2 ip6-allrouters',
+            '/proc/version': 'Linux version 4.15.0-96-generic (buildd@lgw01-amd64-038) (gcc version 7.5.0 (Ubuntu 7.5.0-3ubuntu1~18.04)) #97-Ubuntu SMP Wed Apr 1 03:25:46 UTC 2020',
+            '/proc/cpuinfo': 'processor\t: 0\nvendor_id\t: GenuineIntel\ncpu family\t: 6\nmodel\t\t: 142\nmodel name\t: Intel(R) Core(TM) i7-8550U CPU @ 1.80GHz\nstepping\t: 10\nmicrocode\t: 0xca\ncpu MHz\t\t: 1992.000\ncache size\t: 8192 KB',
+            '/etc/issue': 'Ubuntu 18.04.3 LTS \\n \\l',
+            '/etc/os-release': 'NAME="Ubuntu"\nVERSION="18.04.3 LTS (Bionic Beaver)"\nID=ubuntu\nID_LIKE=debian\nPRETTY_NAME="Ubuntu 18.04.3 LTS"\nVERSION_ID="18.04"\nHOME_URL="https://www.ubuntu.com/"\nSUPPORT_URL="https://help.ubuntu.com/"\nBUG_REPORT_URL="https://bugs.launchpad.net/ubuntu/"\nPRIVACY_POLICY_URL="https://www.ubuntu.com/legal/terms-and-policies/privacy-policy"\nVERSION_CODENAME=bionic\nUBUNTU_CODENAME=bionic'
+        }
+
+        return file_responses.get(file_path, f"cat: {file_path}: No such file or directory")
+
+    def _handle_echo_command(self, command_parts):
+        """Handle echo command"""
+        if len(command_parts) < 2:
+            return ""
+
+        # Join all arguments after 'echo'
+        return " ".join(command_parts[1:])
 
     def analyze_ssh_command(self, command, connection_data):
         """Analyze SSH command for attack patterns and suspicious activity"""
         command_lower = command.lower().strip()
+        command_parts = command_lower.split()
+        base_command = command_parts[0] if command_parts else ""
 
         attack_indicators = []
         severity = 'low'
         attack_type = 'reconnaissance'
         recommendations = []
 
-        # Reconnaissance commands
-        recon_commands = {
+        # Reconnaissance commands (base commands and specific patterns)
+        recon_base_commands = {
             'whoami': {'severity': 'low', 'type': 'reconnaissance', 'desc': 'User enumeration'},
             'id': {'severity': 'low', 'type': 'reconnaissance', 'desc': 'User ID enumeration'},
-            'uname -a': {'severity': 'medium', 'type': 'reconnaissance', 'desc': 'System information gathering'},
+            'uname': {'severity': 'medium', 'type': 'reconnaissance', 'desc': 'System information gathering'},
+            'ps': {'severity': 'medium', 'type': 'reconnaissance', 'desc': 'Process enumeration'},
+            'netstat': {'severity': 'medium', 'type': 'reconnaissance', 'desc': 'Network service enumeration'},
+            'ls': {'severity': 'low', 'type': 'reconnaissance', 'desc': 'Directory listing'},
+            'cat': {'severity': 'medium', 'type': 'reconnaissance', 'desc': 'File content access'},
+            'w': {'severity': 'low', 'type': 'reconnaissance', 'desc': 'User activity enumeration'},
+            'who': {'severity': 'low', 'type': 'reconnaissance', 'desc': 'Logged in users enumeration'},
+            'uptime': {'severity': 'low', 'type': 'reconnaissance', 'desc': 'System uptime check'},
+            'df': {'severity': 'low', 'type': 'reconnaissance', 'desc': 'Disk usage enumeration'},
+            'free': {'severity': 'low', 'type': 'reconnaissance', 'desc': 'Memory usage enumeration'},
+            'ifconfig': {'severity': 'medium', 'type': 'reconnaissance', 'desc': 'Network interface enumeration'},
+            'history': {'severity': 'medium', 'type': 'reconnaissance', 'desc': 'Command history access'},
+        }
+
+        # Specific high-risk file access patterns
+        high_risk_patterns = {
             'cat /etc/passwd': {'severity': 'high', 'type': 'reconnaissance', 'desc': 'Password file access attempt'},
-            'ps aux': {'severity': 'medium', 'type': 'reconnaissance', 'desc': 'Process enumeration'},
-            'netstat -an': {'severity': 'medium', 'type': 'reconnaissance', 'desc': 'Network service enumeration'},
-            'ls -la': {'severity': 'low', 'type': 'reconnaissance', 'desc': 'Directory listing'},
+            'cat /etc/shadow': {'severity': 'critical', 'type': 'reconnaissance', 'desc': 'Shadow file access attempt'},
+            'cat /proc/version': {'severity': 'medium', 'type': 'reconnaissance', 'desc': 'Kernel version enumeration'},
+            'cat /etc/issue': {'severity': 'medium', 'type': 'reconnaissance', 'desc': 'OS version enumeration'},
             'pwd': {'severity': 'low', 'type': 'reconnaissance', 'desc': 'Current directory check'}
         }
 
-        # Malicious command patterns
-        malicious_patterns = {
-            'rm -rf': {'severity': 'critical', 'type': 'destruction', 'desc': 'File deletion attempt'},
+        # Malicious base commands and patterns
+        malicious_base_commands = {
             'wget': {'severity': 'high', 'type': 'download', 'desc': 'File download attempt'},
             'curl': {'severity': 'high', 'type': 'download', 'desc': 'File download attempt'},
-            'chmod +x': {'severity': 'high', 'type': 'execution', 'desc': 'File permission modification'},
             'crontab': {'severity': 'high', 'type': 'persistence', 'desc': 'Scheduled task creation'},
             'nohup': {'severity': 'high', 'type': 'persistence', 'desc': 'Background process execution'},
+            'nc': {'severity': 'critical', 'type': 'backdoor', 'desc': 'Netcat usage detected'},
+            'nmap': {'severity': 'high', 'type': 'scanning', 'desc': 'Network scanning attempt'},
+            'sudo': {'severity': 'high', 'type': 'privilege_escalation', 'desc': 'Privilege escalation attempt'},
+            'su': {'severity': 'high', 'type': 'privilege_escalation', 'desc': 'User switching attempt'},
+            'python': {'severity': 'medium', 'type': 'execution', 'desc': 'Python interpreter usage'},
+            'python3': {'severity': 'medium', 'type': 'execution', 'desc': 'Python3 interpreter usage'},
+            'perl': {'severity': 'medium', 'type': 'execution', 'desc': 'Perl interpreter usage'},
+            'ruby': {'severity': 'medium', 'type': 'execution', 'desc': 'Ruby interpreter usage'},
+            'bash': {'severity': 'medium', 'type': 'shell', 'desc': 'Bash shell execution'},
+            'sh': {'severity': 'medium', 'type': 'shell', 'desc': 'Shell execution'},
+            'rm': {'severity': 'high', 'type': 'destruction', 'desc': 'File deletion attempt'},
+            'chmod': {'severity': 'medium', 'type': 'modification', 'desc': 'File permission modification'},
+            'chown': {'severity': 'medium', 'type': 'modification', 'desc': 'File ownership modification'},
+        }
+
+        # Malicious command patterns (for more complex detection)
+        malicious_patterns = {
+            'rm -rf': {'severity': 'critical', 'type': 'destruction', 'desc': 'Recursive file deletion attempt'},
+            'chmod +x': {'severity': 'high', 'type': 'execution', 'desc': 'Making file executable'},
             'nc -l': {'severity': 'critical', 'type': 'backdoor', 'desc': 'Netcat listener setup'},
             'python -c': {'severity': 'high', 'type': 'execution', 'desc': 'Python code execution'},
             'bash -i': {'severity': 'high', 'type': 'shell', 'desc': 'Interactive shell spawn'},
-            '/bin/sh': {'severity': 'high', 'type': 'shell', 'desc': 'Shell execution'},
-            'sudo': {'severity': 'high', 'type': 'privilege_escalation', 'desc': 'Privilege escalation attempt'}
+            '/bin/sh': {'severity': 'high', 'type': 'shell', 'desc': 'Direct shell execution'},
+            'base64': {'severity': 'medium', 'type': 'obfuscation', 'desc': 'Base64 encoding/decoding'},
         }
 
-        # Check for exact command matches
-        if command_lower in recon_commands:
-            info = recon_commands[command_lower]
+        # Check for specific high-risk patterns first
+        for pattern, info in high_risk_patterns.items():
+            if command_lower == pattern:
+                attack_indicators.append(f"High-Risk Access: {info['desc']}")
+                severity = info['severity']
+                attack_type = info['type']
+                break
+
+        # Check base command for reconnaissance
+        if base_command in recon_base_commands and not attack_indicators:
+            info = recon_base_commands[base_command]
             attack_indicators.append(f"Reconnaissance: {info['desc']}")
             severity = info['severity']
             attack_type = info['type']
 
-        # Check for malicious patterns
+        # Check base command for malicious activity
+        if base_command in malicious_base_commands:
+            info = malicious_base_commands[base_command]
+            attack_indicators.append(f"Malicious Activity: {info['desc']}")
+            severity = self._max_severity_ssh(severity, info['severity'])
+            attack_type = info['type']
+
+        # Check for malicious patterns in full command
         for pattern, info in malicious_patterns.items():
             if pattern in command_lower:
-                attack_indicators.append(f"Malicious Activity: {info['desc']}")
+                attack_indicators.append(f"Malicious Pattern: {info['desc']}")
                 severity = self._max_severity_ssh(severity, info['severity'])
                 attack_type = info['type']
 
