@@ -18,7 +18,7 @@ PHIDS is a **honeypot-based intrusion detection system** designed for:
 
 ### **Core Capabilities**
 - ✅ **Real-time Detection**: Sub-second attack detection with precise timestamps
-- ✅ **Multiple Honeypots**: SSH (port 2222) and HTTP (port 8080) services
+- ✅ **Multiple Honeypots**: SSH (port 2222) and HTTP (port 8081) services
 - ✅ **Live Dashboard**: WebSocket-powered real-time monitoring interface
 - ✅ **Attack Classification**: Automated severity assessment and threat categorization
 - ✅ **Event Correlation**: Timeline analysis and attack pattern recognition
@@ -94,11 +94,11 @@ ssh root@127.0.0.1 -p 2222
 # - Precise timestamp accuracy (ISO 8601 format)
 ```
 
-#### **HTTP Honeypot (Port 8080)**
+#### **HTTP Honeypot (Port 8081)**
 ```bash
 # Test web application attacks
-curl http://127.0.0.1:8080/admin
-curl "http://127.0.0.1:8080/login?user=admin&pass=admin' OR '1'='1"
+curl http://127.0.0.1:8081/admin
+curl "http://127.0.0.1:8081/login?user=admin&pass=admin' OR '1'='1"
 
 # Expected SOC Output:
 # - HTTP request analysis
@@ -138,18 +138,18 @@ curl "http://127.0.0.1:8080/login?user=admin&pass=admin' OR '1'='1"
 ```bash
 # 1. Verify PHIDS is running
 python main.py --debug
-# Expected output: "SSH Honeypot started on port 2222", "HTTP Honeypot started on port 8080"
+# Expected output: "SSH Honeypot started on port 2222", "HTTP Honeypot started on port 8081"
 
 # 2. Test dashboard API connectivity
-curl http://127.0.0.1:5000/api/stats
+curl http://127.0.0.1:5001/api/stats
 # Expected: JSON response with statistics
 
 # 3. Verify ports are listening
-netstat -an | grep ":2222\|:8080\|:5000"
+netstat -an | grep ":2222\|:8081\|:5001"
 # Expected: LISTENING status for all three ports
 
 # 4. Test honeypot responsiveness
-curl http://127.0.0.1:8080/test
+curl http://127.0.0.1:8081/test
 # Expected: Response from HTTP honeypot + dashboard entry within 2 seconds
 ```
 
@@ -243,7 +243,7 @@ python -c "
 import time
 import requests
 start = time.time()
-requests.get('http://127.0.0.1:8080/test')
+requests.get('http://127.0.0.1:8081/test')
 print(f'Response time: {time.time() - start:.3f}s')
 # Expected: < 0.1s response time, dashboard update within 1s
 "
@@ -253,7 +253,7 @@ print(f'Response time: {time.time() - start:.3f}s')
 ```bash
 # Test concurrent connections
 for i in {1..10}; do
-    curl http://127.0.0.1:8080/test &
+    curl http://127.0.0.1:8081/test &
 done
 wait
 # Expected: All requests logged with accurate timestamps
@@ -290,7 +290,7 @@ docker build -t phids:dev .
 
 # Run with volume mounts for development
 docker run -d \
-  -p 2222:2222 -p 8080:8080 -p 5000:5000 \
+  -p 2222:2222 -p 8081:8081 -p 5001:5001 \
   -v $(pwd)/data:/app/data \
   -v $(pwd)/logs:/app/logs \
   phids:dev
@@ -330,7 +330,7 @@ phids/
 # Honeypot Configuration
 HONEYPOT_CONFIG = {
     "ssh": {"port": 2222, "enabled": True},
-    "http": {"port": 8080, "enabled": True}
+    "http": {"port": 8081, "enabled": True}
 }
 
 # Dashboard Configuration

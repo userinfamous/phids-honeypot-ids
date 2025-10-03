@@ -152,6 +152,10 @@ class HTTPHoneypot(BaseHoneypot):
                 connection_data['failure_reason'] = failure_reason
                 connection_data['enhanced_log'] = enhanced_log.to_dict()
 
+            # Analyze attack success and add to connection data
+            attack_analysis = self._analyze_attack_success(connection_data)
+            connection_data.update(attack_analysis)
+
             await self.log_connection(connection_data)
             await self.close_connection(writer, session_id)
     
@@ -365,6 +369,14 @@ class HTTPHoneypot(BaseHoneypot):
         # Handle login attempts
         if path == "/login" and method == "POST":
             return self.handle_login_attempt(request_info)
+
+        # Handle admin login attempts
+        if path == "/admin" and method == "POST":
+            return self.handle_admin_login_attempt(request_info)
+
+        # Handle other admin-related POST requests
+        if path in ["/wp-admin", "/phpmyadmin"] and method == "POST":
+            return self.handle_admin_login_attempt(request_info)
         
         # Handle common vulnerable paths
         vulnerable_paths = [
@@ -614,7 +626,78 @@ Password: <input type="password" name="password"><br>
 </body>
 </html>"""
         return self.generate_success_response(content)
-    
+
+    def handle_admin_login_attempt(self, request_info):
+        """Handle admin login form submission with honeypot authentication"""
+        # Parse form data
+        form_data = {}
+        if request_info['body']:
+            try:
+                form_data = dict(urllib.parse.parse_qsl(request_info['body']))
+            except Exception:
+                pass
+
+        # Extract credentials from different form field names
+        username = (form_data.get('username', '') or
+                   form_data.get('log', '') or
+                   form_data.get('pma_username', ''))
+        password = (form_data.get('password', '') or
+                   form_data.get('pwd', '') or
+                   form_data.get('pma_password', ''))
+
+        self.logger.info(f"Admin login attempt: {username}:{password} on {request_info['path']}")
+
+        # Honeypot behavior: Accept specific "weak" credentials to simulate vulnerability
+        # This allows attackers to think they've gained access while we monitor them
+        weak_credentials = [
+            ('admin', 'admin'),
+            ('admin', 'password'),
+            ('admin', '123456'),
+            ('root', 'root'),
+            ('administrator', 'admin'),
+            ('test', 'test'),
+            ('guest', 'guest'),
+            ('demo', 'demo')
+        ]
+
+        if (username.lower(), password.lower()) in weak_credentials:
+            # Simulate successful login - this is intentional honeypot behavior
+            content = f"""<html>
+<head><title>Admin Dashboard - {username}</title></head>
+<body>
+<h1>Welcome to Admin Dashboard</h1>
+<p>Successfully logged in as: <strong>{username}</strong></p>
+<div style="border: 1px solid #ccc; padding: 10px; margin: 10px 0;">
+    <h3>System Status</h3>
+    <p>Server: Online</p>
+    <p>Database: Connected</p>
+    <p>Users: 1,247 registered</p>
+    <p>Last backup: 2 days ago</p>
+</div>
+<div style="border: 1px solid #ccc; padding: 10px; margin: 10px 0;">
+    <h3>Quick Actions</h3>
+    <p><a href="/admin/users">Manage Users</a></p>
+    <p><a href="/admin/settings">System Settings</a></p>
+    <p><a href="/admin/logs">View Logs</a></p>
+    <p><a href="/admin/backup">Create Backup</a></p>
+</div>
+<p><em>Note: This is a honeypot simulation. In reality, this would be a security vulnerability.</em></p>
+</body>
+</html>"""
+            return self.generate_success_response(content)
+        else:
+            # Return login failed for other credentials
+            content = f"""<html>
+<head><title>Login Failed</title></head>
+<body>
+<h2>Authentication Failed</h2>
+<p>Invalid username or password for admin panel.</p>
+<p>Attempted credentials: {username} / {'*' * len(password)}</p>
+<a href="{request_info['path']}">Try again</a>
+</body>
+</html>"""
+            return self.generate_success_response(content)
+
     def generate_index_page(self):
         """Generate fake index page"""
         return """<!DOCTYPE html>
@@ -698,3 +781,85 @@ Password: <input type="password" name="password"><br>
     </form>
 </body>
 </html>"""
+
+    def _analyze_attack_success(self, connection_data):
+        """Analyze whether attacks were successful and what level of access was gained"""
+        analysis = {
+            'attack_success_status': 'unknown',
+            'access_level_gained': 'none',
+            'attack_indicators': [],
+            'honeypot_response': 'standard',
+            'success_reason': None
+        }
+
+        try:
+            # Get request and response data
+            commands = connection_data.get('commands', [])
+            payloads = connection_data.get('payloads', [])
+            user_agent = connection_data.get('user_agent', '')
+
+            # Analyze for attack patterns
+            attack_patterns_found = []
+
+            for command in commands:
+                if isinstance(command, dict):
+                    path = command.get('path', '').lower()
+                    method = command.get('method', '').upper()
+                    body = command.get('body', '').lower()
+
+                    # Check for common attack patterns
+                    if any(pattern in path for pattern in ['admin', 'login', 'config', 'backup']):
+                        attack_patterns_found.append('admin_access_attempt')
+
+                    if any(pattern in path + body for pattern in ["'", 'union', 'select', 'drop', 'insert']):
+                        attack_patterns_found.append('sql_injection')
+
+                    if any(pattern in path + body for pattern in ['<script', 'javascript:', 'onerror']):
+                        attack_patterns_found.append('xss_attempt')
+
+                    if any(pattern in path for pattern in ['../', '..\\']):
+                        attack_patterns_found.append('directory_traversal')
+
+                    if method in ['PUT', 'DELETE', 'PATCH'] or 'upload' in path:
+                        attack_patterns_found.append('file_manipulation')
+
+            # Check user agent for attack tools
+            if any(tool in user_agent.lower() for tool in ['sqlmap', 'nikto', 'burp', 'nmap', 'attackbot']):
+                attack_patterns_found.append('automated_tool')
+
+            analysis['attack_indicators'] = attack_patterns_found
+
+            # Determine attack success status
+            if not attack_patterns_found:
+                analysis['attack_success_status'] = 'no_attack_detected'
+                analysis['honeypot_response'] = 'normal_response'
+            else:
+                # For honeypot purposes, we intentionally allow some "successful" responses
+                # to make attackers think they're making progress
+                if 'admin_access_attempt' in attack_patterns_found:
+                    analysis['attack_success_status'] = 'simulated_success'
+                    analysis['access_level_gained'] = 'admin_panel_access'
+                    analysis['honeypot_response'] = 'fake_admin_panel'
+                    analysis['success_reason'] = 'Honeypot provided fake admin interface'
+                elif 'sql_injection' in attack_patterns_found:
+                    analysis['attack_success_status'] = 'simulated_success'
+                    analysis['access_level_gained'] = 'database_simulation'
+                    analysis['honeypot_response'] = 'fake_sql_response'
+                    analysis['success_reason'] = 'Honeypot simulated vulnerable database'
+                elif 'automated_tool' in attack_patterns_found:
+                    analysis['attack_success_status'] = 'detected_and_logged'
+                    analysis['access_level_gained'] = 'none'
+                    analysis['honeypot_response'] = 'standard_response'
+                    analysis['success_reason'] = 'Attack tool detected and monitored'
+                else:
+                    analysis['attack_success_status'] = 'attempted_but_failed'
+                    analysis['access_level_gained'] = 'none'
+                    analysis['honeypot_response'] = 'error_response'
+                    analysis['success_reason'] = 'Attack attempt blocked by honeypot'
+
+        except Exception as e:
+            self.logger.warning(f"Error analyzing attack success: {e}")
+            analysis['attack_success_status'] = 'analysis_error'
+            analysis['success_reason'] = f'Analysis failed: {str(e)}'
+
+        return analysis

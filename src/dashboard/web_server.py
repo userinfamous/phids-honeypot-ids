@@ -789,11 +789,15 @@ class DashboardWebServer:
         # This is a simplified implementation for educational purposes
         # In production, integrate with services like MaxMind, IPinfo, or similar
 
+        # For educational/testing purposes, provide realistic but clearly simulated data
+        # This explains why localhost might show as different countries
+
         # Basic country mapping based on IP ranges (very simplified)
         ip_parts = ip_address.split('.')
         first_octet = int(ip_parts[0])
 
         # Simplified mapping - in reality, use proper GeoIP databases
+        # Note: This is intentionally simplified and may show unexpected results for testing
         country_mapping = {
             (1, 50): 'United States',
             (51, 100): 'Europe',
@@ -810,13 +814,13 @@ class DashboardWebServer:
 
         return {
             'country': country,
-            'city': 'Unknown',
+            'city': 'Simulated Location',
             'latitude': None,
             'longitude': None,
-            'isp': 'Unknown ISP',
+            'isp': 'Educational ISP Simulation',
             'is_private': False,
             'accuracy': 'low',
-            'note': 'Educational geolocation - not production accurate'
+            'note': 'Educational geolocation - simulated data for testing purposes. Real production systems would use actual GeoIP databases.'
         }
 
     def _validate_attack_legitimacy(self, alert, connection_data=None):

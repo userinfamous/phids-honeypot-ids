@@ -180,6 +180,11 @@
                 </button>
             </li>
             <li class="nav-item" role="presentation">
+                <button class="nav-link" id="architecture-tab" data-bs-toggle="pill" data-bs-target="#architecture" type="button" role="tab">
+                    <i class="fas fa-sitemap me-2"></i>Architecture
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
                 <button class="nav-link" id="deployment-tab" data-bs-toggle="pill" data-bs-target="#deployment" type="button" role="tab">
                     <i class="fas fa-rocket me-2"></i>Deployment
                 </button>
@@ -370,7 +375,7 @@
                                 <div class="success-box">
                                     <h6><i class="fas fa-check-circle me-2"></i>Current Protections</h6>
                                     <ul>
-                                        <li>Dashboard bound to localhost (127.0.0.1:5000)</li>
+                                        <li>Dashboard bound to localhost (127.0.0.1:5001)</li>
                                         <li>Container-based isolation</li>
                                         <li>Non-root user execution</li>
                                         <li>Resource limits configured</li>
@@ -411,6 +416,135 @@
                 </div>
             </div>
 
+            <!-- Architecture Tab -->
+            <div class="tab-pane fade" id="architecture" role="tabpanel">
+                <div class="card">
+                    <div class="card-body">
+                        <h2 class="section-header">System Architecture & Data Flow</h2>
+
+                        <div class="text-center mb-4">
+                            <img src="/static/system_architecture.svg" alt="PHIDS System Architecture" class="img-fluid" style="max-width: 100%; height: auto; border: 1px solid #ddd; border-radius: 10px; padding: 10px; background: white;">
+                        </div>
+
+                        <h4><i class="fas fa-flow-chart me-2 text-primary"></i>Data Flow Process</h4>
+                        <div class="row">
+                            <div class="col-md-6">
+                                <h6>1. Attack Initiation</h6>
+                                <p>External attackers target the honeypot services (SSH on port 2222, HTTP on port 8081) believing they are legitimate vulnerable systems.</p>
+
+                                <h6>2. Honeypot Interaction</h6>
+                                <p>Honeypots capture all interaction data including commands, payloads, authentication attempts, and connection metadata with precise timestamps.</p>
+
+                                <h6>3. Real-time Analysis</h6>
+                                <p>The IDS Engine analyzes captured data using signature-based detection to identify attack patterns and generate security alerts.</p>
+                            </div>
+                            <div class="col-md-6">
+                                <h6>4. Data Storage</h6>
+                                <p>All events are stored in the SQLite database with comprehensive logging including attack success analysis and geolocation data.</p>
+
+                                <h6>5. SOC Monitoring</h6>
+                                <p>The web dashboard provides real-time monitoring with WebSocket updates, allowing security analysts to observe attacks as they happen.</p>
+
+                                <h6>6. Export & Integration</h6>
+                                <p>Data can be exported in CSV format for integration with SIEM systems and further analysis.</p>
+                            </div>
+                        </div>
+
+                        <h4><i class="fas fa-network-wired me-2 text-primary"></i>Component Details</h4>
+                        <div class="row">
+                            <div class="col-md-4">
+                                <div class="card border-warning">
+                                    <div class="card-header bg-warning text-dark">
+                                        <h6><i class="fas fa-server me-2"></i>Honeypot Services</h6>
+                                    </div>
+                                    <div class="card-body">
+                                        <ul class="list-unstyled">
+                                            <li><strong>SSH Honeypot:</strong> Port 2222</li>
+                                            <li><strong>HTTP Honeypot:</strong> Port 8081</li>
+                                            <li><strong>Authentication:</strong> Simulated weak credentials</li>
+                                            <li><strong>Response:</strong> Realistic fake services</li>
+                                        </ul>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="card border-danger">
+                                    <div class="card-header bg-danger text-white">
+                                        <h6><i class="fas fa-shield-alt me-2"></i>IDS Engine</h6>
+                                    </div>
+                                    <div class="card-body">
+                                        <ul class="list-unstyled">
+                                            <li><strong>Detection:</strong> Signature-based patterns</li>
+                                            <li><strong>Analysis:</strong> SQL injection, XSS, traversal</li>
+                                            <li><strong>Alerts:</strong> Real-time generation</li>
+                                            <li><strong>Classification:</strong> Severity levels</li>
+                                        </ul>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="card border-primary">
+                                    <div class="card-header bg-primary text-white">
+                                        <h6><i class="fas fa-chart-line me-2"></i>Dashboard</h6>
+                                    </div>
+                                    <div class="card-body">
+                                        <ul class="list-unstyled">
+                                            <li><strong>Interface:</strong> FastAPI + WebSocket</li>
+                                            <li><strong>Updates:</strong> Real-time (1-second)</li>
+                                            <li><strong>Monitoring:</strong> Live attack visualization</li>
+                                            <li><strong>Export:</strong> CSV for SIEM integration</li>
+                                        </ul>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <h4><i class="fas fa-database me-2 text-primary"></i>Database Schema</h4>
+                        <div class="code-block">
+                            <pre><code>honeypot_connections:
+├── id, session_id, source_ip, source_port
+├── destination_port, service_type, timestamp
+├── commands, payloads, user_agent
+├── attack_success_status, access_level_gained
+└── attack_indicators, honeypot_response
+
+ids_alerts:
+├── id, source_ip, destination_ip, alert_type
+├── severity, signature_id, description
+├── timestamp, raw_data, attack_analysis
+└── threat_intelligence, geolocation
+
+authentication_events:
+├── id, session_id, username, password
+├── success, service_type, timestamp
+└── source_ip, authentication_method</code></pre>
+                        </div>
+
+                        <h4><i class="fas fa-clock me-2 text-primary"></i>Performance Characteristics</h4>
+                        <div class="row">
+                            <div class="col-md-6">
+                                <h6>Real-time Capabilities</h6>
+                                <ul>
+                                    <li><strong>Detection Latency:</strong> Sub-second (0.7s average)</li>
+                                    <li><strong>WebSocket Updates:</strong> 1-second intervals</li>
+                                    <li><strong>Database Writes:</strong> Asynchronous, non-blocking</li>
+                                    <li><strong>API Response:</strong> <0.1s for most queries</li>
+                                </ul>
+                            </div>
+                            <div class="col-md-6">
+                                <h6>Scalability Features</h6>
+                                <ul>
+                                    <li><strong>Concurrent Connections:</strong> 50+ simultaneous</li>
+                                    <li><strong>Data Retention:</strong> Configurable time windows</li>
+                                    <li><strong>Memory Usage:</strong> Optimized caching</li>
+                                    <li><strong>Storage:</strong> SQLite with indexing</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <!-- Deployment Tab -->
             <div class="tab-pane fade" id="deployment" role="tabpanel">
                 <div class="card">
@@ -425,7 +559,7 @@ cd phids-honeypot-ids
 docker-compose up -d
 
 # Access Dashboard
-http://localhost:5000</code></pre>
+http://localhost:5001</code></pre>
                         </div>
 
                         <h4><i class="fas fa-python me-2 text-primary"></i>Manual Installation</h4>
@@ -446,14 +580,14 @@ python start_dashboard.py</code></pre>
                             <pre><code># Honeypot Services
 HONEYPOT_CONFIG = {
     "ssh": {"port": 2222, "enabled": True},
-    "http": {"port": 8080, "enabled": True},
+    "http": {"port": 8081, "enabled": True},
     "ftp": {"port": 2121, "enabled": False}
 }
 
 # Dashboard Settings
 DASHBOARD_CONFIG = {
     "host": "127.0.0.1",  # Change for external access
-    "port": 5000,
+    "port": 5001,
     "enabled": True
 }</code></pre>
                         </div>
