@@ -41,7 +41,8 @@ class NetworkMonitor:
         
         # Network interfaces and filters
         self.interface = None
-        self.packet_filter = "tcp or udp"
+        # Only monitor traffic to/from honeypot ports to avoid background noise
+        self.packet_filter = "tcp port 2222 or tcp port 8080"
         
         # Callbacks for real-time updates
         self.threat_callbacks: List[Callable] = []

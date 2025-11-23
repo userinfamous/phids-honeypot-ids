@@ -9,6 +9,7 @@ from src.core.database import DatabaseManager
 from src.capture.packet_capture import PacketCapture
 from .signatures import SignatureEngine
 from .anomaly_detection import AnomalyDetector
+from .attack_classifier import AttackClassifier
 
 
 class IDSEngine:
@@ -19,12 +20,13 @@ class IDSEngine:
         self.db_manager = DatabaseManager()
         self.signature_engine = SignatureEngine()
         self.anomaly_detector = AnomalyDetector()
+        self.attack_classifier = AttackClassifier()
         self.packet_capture = PacketCapture()
         self.running = False
-        
+
         # Configuration
         self.config = IDS_CONFIG
-        
+
         # Statistics
         self.stats = {
             'alerts_generated': 0,
@@ -133,15 +135,24 @@ class IDSEngine:
                 'raw_data': str(connection_data)
             }
             
+            # Classify attack type
+            classifications = self.attack_classifier.classify_alert(alert_data)
+            if classifications:
+                alert_data['attack_classifications'] = classifications
+                for classification in classifications:
+                    self.logger.info(
+                        f"CLASSIFIED: {classification['name']} - {classification['description']}"
+                    )
+
             # Store alert in database
             await self.db_manager.log_alert(alert_data)
-            
+
             # Add to signature engine history
             self.signature_engine.add_alert_to_history(alert)
-            
+
             # Update statistics
             self.stats['alerts_generated'] += 1
-            
+
             # Log alert
             self.logger.warning(
                 f"ALERT: {alert_data['alert_type']} from {alert_data['source_ip']} "
@@ -183,39 +194,24 @@ class IDSEngine:
                 await asyncio.sleep(10)  # Faster recovery for real-time monitoring
     
     async def _monitor_anomalies(self):
-        """Monitor for anomalous behavior"""
-        self.logger.info("Starting anomaly monitoring")
-        
+        """Monitor for anomalous behavior - DISABLED
+
+        Automatic anomaly detection alerts are disabled. Only user-triggered attacks
+        via attack buttons will generate alerts. This prevents false positives from
+        normal network traffic and system behavior.
+        """
+        self.logger.info("Anomaly monitoring disabled - only manual attacks generate alerts")
+
+        # Keep the task running but don't generate automatic alerts
         while self.running:
             try:
-                # Get packet capture statistics
+                # Just update statistics without generating alerts
                 packet_stats = self.packet_capture.get_statistics()
                 self.stats['packets_processed'] = packet_stats.get('total_packets', 0)
-                
-                # Analyze for anomalies
-                anomalies = await self.anomaly_detector.analyze_statistics(packet_stats)
-                
-                for anomaly in anomalies:
-                    # Create alert for anomaly
-                    alert_data = {
-                        'alert_type': 'anomaly_detection',
-                        'severity': anomaly.get('severity', 'medium'),
-                        'source_ip': anomaly.get('source_ip', 'multiple'),
-                        'destination_ip': 'honeypot',
-                        'protocol': 'network',
-                        'signature_id': 'PHIDS_ANOMALY',
-                        'description': anomaly.get('description', 'Anomalous behavior detected'),
-                        'raw_data': str(anomaly)
-                    }
-                    
-                    await self.db_manager.log_alert(alert_data)
-                    self.stats['alerts_generated'] += 1
-                    
-                    self.logger.warning(f"ANOMALY: {alert_data['description']}")
-                
+
                 # Wait before next check
                 await asyncio.sleep(60)  # Check every minute
-                
+
             except Exception as e:
                 self.logger.error(f"Error in anomaly monitoring: {e}")
                 await asyncio.sleep(120)  # Wait longer on error

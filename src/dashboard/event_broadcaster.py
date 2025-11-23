@@ -71,6 +71,16 @@ class EventBroadcaster:
             except Exception as e:
                 self.logger.error(f"Error broadcasting stats update: {e}")
 
+    async def broadcast_authentication(self, auth_data: Dict):
+        """Broadcast new authentication event"""
+        if self.dashboard_server:
+            try:
+                # Serialize datetime objects for JSON compatibility
+                serialized_data = serialize_for_json(auth_data)
+                await self.dashboard_server.broadcast_event("new_authentication", serialized_data)
+            except Exception as e:
+                self.logger.error(f"Error broadcasting authentication event: {e}")
+
 
 # Global instance
 event_broadcaster = EventBroadcaster()

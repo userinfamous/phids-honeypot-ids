@@ -15,62 +15,141 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <!-- Font Awesome -->
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <!-- Shared Design System -->
+    <link href="/static/style.css" rel="stylesheet">
     
     <style>
-        body {
-            background-color: #f8f9fa;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        .section-header {
+            margin-top: 3rem;
+            margin-bottom: 2rem;
+            padding-bottom: 1rem;
+            border-bottom: 2px solid var(--accent-blue);
         }
-        
-        .navbar {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+
+        .info-box {
+            background: rgba(22, 33, 62, 0.6);
+            border-left: 4px solid var(--accent-blue);
+            padding: 1.5rem;
+            margin: 1.5rem 0;
+            border-radius: 8px;
+            transition: all 0.3s ease;
         }
-        
-        .attack-card {
-            border: none;
-            border-radius: 15px;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-            margin-bottom: 1.5rem;
-            transition: transform 0.2s, box-shadow 0.2s;
+
+        .info-box:hover {
+            background: rgba(22, 33, 62, 0.8);
+            border-left-color: var(--accent-red);
         }
-        
-        .attack-card:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
+
+        .info-box i {
+            color: var(--accent-red);
+            margin-right: 0.5rem;
         }
-        
-        .attack-icon {
+
+        .feature-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 2rem;
+            margin: 2rem 0;
+        }
+
+        .feature-card {
+            background: rgba(22, 33, 62, 0.5);
+            border: 1px solid rgba(200, 200, 200, 0.1);
+            padding: 2rem;
+            border-radius: 12px;
+            text-align: center;
+            transition: all 0.3s ease;
+        }
+
+        .feature-card:hover {
+            background: rgba(22, 33, 62, 0.8);
+            transform: translateY(-4px);
+            border-color: var(--accent-red);
+        }
+
+        .feature-icon {
             font-size: 2.5rem;
+            color: var(--accent-red);
             margin-bottom: 1rem;
         }
-        
-        .ssh-attack { color: #e74c3c; }
-        .http-attack { color: #3498db; }
-        .network-attack { color: #f39c12; }
-        .brute-force { color: #9b59b6; }
-        
-        .attack-btn {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            border: none;
-            border-radius: 25px;
-            padding: 0.75rem 2rem;
-            color: white;
-            font-weight: bold;
-            transition: all 0.3s;
+
+        .code-block {
+            background: #0f0f1e;
+            border: 1px solid var(--accent-blue);
+            border-radius: 8px;
+            padding: 1.5rem;
+            margin: 1.5rem 0;
+            overflow-x: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9rem;
+            line-height: 1.6;
         }
-        
-        .attack-btn:hover {
-            background: linear-gradient(135deg, #764ba2 0%, #667eea 100%);
-            transform: scale(1.05);
-            color: white;
+
+        .tooltip-icon {
+            cursor: help;
+            color: var(--accent-blue);
+            margin-left: 0.5rem;
+            transition: color 0.3s ease;
         }
-        
-        .attack-btn:disabled {
-            background: #6c757d;
-            transform: none;
+
+        .tooltip-icon:hover {
+            color: var(--accent-red);
         }
-        
+
+        .main-content {
+            flex: 1;
+            padding: 2rem;
+        }
+
+        .nav-link.active {
+            color: var(--accent-red) !important;
+            border-bottom: 3px solid var(--accent-red);
+        }
+
+        /* Bootstrap Card Overrides - High Specificity */
+        .card {
+            background: rgba(22, 33, 62, 0.5) !important;
+            border: 1px solid rgba(200, 200, 200, 0.1) !important;
+            border-radius: 12px !important;
+            color: #c0c0c0 !important;
+        }
+
+        .card * {
+            color: #c0c0c0;
+        }
+
+        .card h1, .card h2, .card h3, .card h4, .card h5, .card h6 {
+            color: #d0d0d0 !important;
+        }
+
+        .card-header {
+            background: rgba(22, 33, 62, 0.6) !important;
+            border-bottom: 1px solid rgba(200, 200, 200, 0.1) !important;
+            color: #d0d0d0 !important;
+        }
+
+        .card-header h1, .card-header h2, .card-header h3,
+        .card-header h4, .card-header h5, .card-header h6 {
+            color: #d0d0d0 !important;
+            margin-bottom: 0 !important;
+        }
+
+        .card-body {
+            color: #c0c0c0 !important;
+        }
+
+        .card-body p, .card-body span, .card-body div {
+            color: #c0c0c0 !important;
+        }
+
+        .card-title {
+            color: #d0d0d0 !important;
+        }
+
+        .card-text {
+            color: #c0c0c0 !important;
+        }
+
         .status-indicator {
             display: inline-block;
             width: 12px;
@@ -78,18 +157,18 @@
             border-radius: 50%;
             margin-right: 8px;
         }
-        
+
         .status-ready { background-color: #28a745; }
         .status-running { background-color: #ffc107; animation: pulse 1.5s infinite; }
         .status-complete { background-color: #17a2b8; }
         .status-error { background-color: #dc3545; }
-        
+
         @keyframes pulse {
             0% { opacity: 1; }
             50% { opacity: 0.5; }
             100% { opacity: 1; }
         }
-        
+
         .log-output {
             background: #2d3748;
             color: #e2e8f0;
@@ -112,8 +191,8 @@
     <nav class="navbar navbar-expand-lg navbar-dark">
         <div class="container">
             <a class="navbar-brand" href="/">
-                <i class="fas fa-shield-alt me-2"></i>
-                PHIDS - Attack Scenarios
+                <i class="fas fa-shield-alt"></i>
+                PHIDS
             </a>
             <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
                 <span class="navbar-toggler-icon"></span>
@@ -121,19 +200,19 @@
             <div class="collapse navbar-collapse" id="navbarNav">
                 <ul class="navbar-nav ms-auto">
                     <li class="nav-item">
-                        <a class="nav-link" href="/">
-                            <i class="fas fa-tachometer-alt me-1"></i>Dashboard
-                        </a>
+                        <a class="nav-link" href="/">Dashboard</a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link active" href="/attacks">
-                            <i class="fas fa-crosshairs me-1"></i>Attacks
-                        </a>
+                        <a class="nav-link" href="/ip-tracking">IP Tracking</a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="/info">
-                            <i class="fas fa-info-circle me-1"></i>Info
-                        </a>
+                        <a class="nav-link active" href="/attacks">Attacks</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/info">Info</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/how-it-works">How It Works</a>
                     </li>
                 </ul>
             </div>
@@ -147,6 +226,128 @@
             <div class="col-12">
                 <h2><i class="fas fa-crosshairs me-2"></i>Attack Simulation Center</h2>
                 <p class="text-muted">Execute pre-configured attack scenarios to test honeypot detection capabilities</p>
+            </div>
+        </div>
+
+        <!-- Manual Testing Guide -->
+        <div class="row mb-5">
+            <div class="col-12">
+                <div class="card attack-card">
+                    <div class="card-body">
+                        <h4 class="card-title mb-3">
+                            <i class="fas fa-flask-vial me-2"></i>Manual Testing Guide
+                        </h4>
+                        <p class="text-muted mb-3">
+                            Learn how to manually trigger attacks against the honeypot. These examples show you exactly how the system works.
+                        </p>
+
+                        <!-- HTTP Successful Login -->
+                        <div class="mb-4">
+                            <h5 class="text-success"><i class="fas fa-check-circle me-2"></i>HTTP Successful Login</h5>
+                            <p class="small text-muted">Test successful authentication with weak credentials</p>
+
+                            <div class="nav nav-tabs mb-3" role="tablist">
+                                <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#http-curl">curl</button>
+                                <button class="nav-link" data-bs-toggle="tab" data-bs-target="#http-python">Python</button>
+                                <button class="nav-link" data-bs-toggle="tab" data-bs-target="#http-browser">Browser</button>
+                            </div>
+
+                            <div class="tab-content">
+                                <div class="tab-pane fade show active" id="http-curl">
+                                    <div class="code-block" id="http-curl-code">curl -X POST http://127.0.0.1:8081/admin \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "username=admin&password=admin" \
+  -L</div>
+                                    <button class="btn btn-sm btn-outline-primary mt-2" onclick="copyToClipboard('http-curl-code')">
+                                        <i class="fas fa-copy me-2"></i>Copy
+                                    </button>
+                                    <p class="small text-muted mt-2"><strong>Expected:</strong> 302 redirect to success page with session ID</p>
+                                </div>
+
+                                <div class="tab-pane fade" id="http-python">
+                                    <div class="code-block" id="http-python-code">import requests
+
+response = requests.post(
+    'http://127.0.0.1:8081/admin',
+    data={'username': 'admin', 'password': 'admin'},
+    allow_redirects=False
+)
+
+print(f"Status: {response.status_code}")
+print(f"Redirect: {response.headers.get('Location')}")</div>
+                                    <button class="btn btn-sm btn-outline-primary mt-2" onclick="copyToClipboard('http-python-code')">
+                                        <i class="fas fa-copy me-2"></i>Copy
+                                    </button>
+                                    <p class="small text-muted mt-2"><strong>Expected:</strong> Status 302 with Location header</p>
+                                </div>
+
+                                <div class="tab-pane fade" id="http-browser">
+                                    <ol class="small">
+                                        <li>Open <code>http://127.0.0.1:8081/admin</code> in your browser</li>
+                                        <li>Enter username: <code>admin</code></li>
+                                        <li>Enter password: <code>admin</code></li>
+                                        <li>Click Login</li>
+                                        <li>Expected: Redirect to success page with session information</li>
+                                    </ol>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- HTTP Failed Login -->
+                        <div class="mb-4">
+                            <h5 class="text-danger"><i class="fas fa-times-circle me-2"></i>HTTP Failed Login</h5>
+                            <p class="small text-muted">Test failed authentication with strong credentials</p>
+
+                            <div class="code-block" id="http-fail-code">curl -X POST http://127.0.0.1:8081/admin \
+  -d "username=admin&password=SuperSecurePassword123!" \
+  -L</div>
+                            <button class="btn btn-sm btn-outline-primary mt-2" onclick="copyToClipboard('http-fail-code')">
+                                <i class="fas fa-copy me-2"></i>Copy
+                            </button>
+                            <p class="small text-muted mt-2"><strong>Expected:</strong> 200 OK with login form (no redirect)</p>
+                        </div>
+
+                        <!-- SSH Successful Login -->
+                        <div class="mb-4">
+                            <h5 class="text-success"><i class="fas fa-check-circle me-2"></i>SSH Successful Login</h5>
+                            <p class="small text-muted">Test successful SSH authentication</p>
+
+                            <div class="code-block" id="ssh-success-code">ssh root@127.0.0.1 -p 2222
+# When prompted, enter password: password
+whoami
+pwd
+exit</div>
+                            <button class="btn btn-sm btn-outline-primary mt-2" onclick="copyToClipboard('ssh-success-code')">
+                                <i class="fas fa-copy me-2"></i>Copy
+                            </button>
+                            <p class="small text-muted mt-2"><strong>Expected:</strong> Successful authentication with shell access</p>
+                        </div>
+
+                        <!-- SSH Failed Login -->
+                        <div class="mb-4">
+                            <h5 class="text-danger"><i class="fas fa-times-circle me-2"></i>SSH Failed Login</h5>
+                            <p class="small text-muted">Test failed SSH authentication</p>
+
+                            <div class="code-block" id="ssh-fail-code">ssh root@127.0.0.1 -p 2222
+# When prompted, enter password: WrongPassword123</div>
+                            <button class="btn btn-sm btn-outline-primary mt-2" onclick="copyToClipboard('ssh-fail-code')">
+                                <i class="fas fa-copy me-2"></i>Copy
+                            </button>
+                            <p class="small text-muted mt-2"><strong>Expected:</strong> Authentication failed message</p>
+                        </div>
+
+                        <!-- Verify Results -->
+                        <div class="alert alert-info mt-4">
+                            <h6><i class="fas fa-info-circle me-2"></i>How to Verify Results</h6>
+                            <ul class="small mb-0">
+                                <li><strong>Dashboard:</strong> Check the main dashboard for new connection events</li>
+                                <li><strong>Database:</strong> Query <code>data/phids.db</code> for connection records</li>
+                                <li><strong>Logs:</strong> Check log files for authentication events</li>
+                                <li><strong>Status:</strong> Look for SUCCESS (green) or FAILED (red) indicators</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -461,6 +662,20 @@
                 console.log('Status update failed:', error);
             }
         }, 5000);
+
+        // Copy to clipboard functionality
+        function copyToClipboard(elementId) {
+            const element = document.getElementById(elementId);
+            const text = element.textContent;
+            navigator.clipboard.writeText(text).then(() => {
+                const btn = event.target;
+                const originalText = btn.innerHTML;
+                btn.innerHTML = '<i class="fas fa-check me-2"></i>Copied!';
+                setTimeout(() => {
+                    btn.innerHTML = originalText;
+                }, 2000);
+            });
+        }
     </script>
 </body>
 </html>

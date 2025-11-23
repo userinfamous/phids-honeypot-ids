@@ -8,7 +8,7 @@ import logging
 import subprocess
 import random
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Any
 from pathlib import Path
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
@@ -22,15 +22,31 @@ from src.core.database import DatabaseManager
 
 
 class DashboardWebServer:
-    """FastAPI-based web dashboard for PHIDS"""
-    
-    def __init__(self):
-        self.logger = logging.getLogger(__name__)
-        self.app = FastAPI(title="PHIDS Dashboard", version="1.0.0")
-        self.db_manager = None
+    """FastAPI-based web dashboard for PHIDS honeypot monitoring.
+
+    Provides real-time monitoring, analytics, and attack simulation capabilities
+    through a modern web interface with WebSocket support for live updates.
+
+    Attributes:
+        logger: Logger instance for dashboard operations
+        app: FastAPI application instance
+        db_manager: Database manager for data persistence
+        active_connections: List of active WebSocket connections
+        stats_cache: Cached statistics for performance optimization
+        cache_timestamp: Timestamp of last cache update
+        templates: Jinja2 template engine
+        templates_dir: Path to templates directory
+        static_dir: Path to static files directory
+    """
+
+    def __init__(self) -> None:
+        """Initialize the dashboard web server with FastAPI and templates."""
+        self.logger: logging.Logger = logging.getLogger(__name__)
+        self.app: FastAPI = FastAPI(title="PHIDS Dashboard", version="1.0.0")
+        self.db_manager: Optional[DatabaseManager] = None
         self.active_connections: List[WebSocket] = []
-        self.stats_cache = {}
-        self.cache_timestamp = None
+        self.stats_cache: Dict[str, Any] = {}
+        self.cache_timestamp: Optional[datetime] = None
         
         # Setup templates and static files
         self.templates_dir = BASE_DIR / "src" / "dashboard" / "templates"
@@ -49,28 +65,50 @@ class DashboardWebServer:
         """Setup FastAPI routes"""
         
         @self.app.get("/", response_class=HTMLResponse)
-        async def dashboard_home(request: Request):
-            """Main dashboard page"""
+        async def dashboard_home(request: Request) -> HTMLResponse:
+            """Main dashboard page with real-time monitoring interface."""
             return self.templates.TemplateResponse("dashboard.html", {"request": request})
 
         @self.app.get("/info", response_class=HTMLResponse)
-        async def info_page(request: Request):
-            """Information and documentation page"""
+        async def info_page(request: Request) -> HTMLResponse:
+            """Information and documentation page about PHIDS."""
             return self.templates.TemplateResponse("info.html", {"request": request})
 
         @self.app.get("/attacks", response_class=HTMLResponse)
-        async def attacks_page(request: Request):
-            """Attack scenarios and automation page"""
+        async def attacks_page(request: Request) -> HTMLResponse:
+            """Attack scenarios and automation page for testing honeypots."""
             return self.templates.TemplateResponse("attacks.html", {"request": request})
-        
+
+        @self.app.get("/how-it-works", response_class=HTMLResponse)
+        async def how_it_works_page(request: Request) -> HTMLResponse:
+            """Educational page explaining how PHIDS works and attack simulation."""
+            return self.templates.TemplateResponse("how-it-works.html", {"request": request})
+
+
+
+        @self.app.get("/ip-tracking", response_class=HTMLResponse)
+        async def ip_tracking_page(request: Request) -> HTMLResponse:
+            """IP tracking page showing unique attacking IPs and their event timelines."""
+            return self.templates.TemplateResponse("ip-tracking.html", {"request": request})
+
+        @self.app.get("/success", response_class=HTMLResponse)
+        async def success_page(request: Request) -> HTMLResponse:
+            """Success page displayed after successful authentication."""
+            return self.templates.TemplateResponse("success.html", {"request": request})
+
+        @self.app.get("/error", response_class=HTMLResponse)
+        async def error_page(request: Request) -> HTMLResponse:
+            """Generic error page for displaying error information."""
+            return self.templates.TemplateResponse("error.html", {"request": request})
+
         @self.app.get("/api/stats")
-        async def get_stats():
-            """Get current system statistics"""
+        async def get_stats() -> Dict[str, Any]:
+            """Get current system statistics including connections and alerts."""
             return await self._get_cached_stats()
-        
+
         @self.app.get("/api/recent-connections")
-        async def get_recent_connections():
-            """Get recent honeypot connections"""
+        async def get_recent_connections() -> Dict[str, List[Any]]:
+            """Get recent honeypot connections from the last 24 hours."""
             if not self.db_manager:
                 return {"connections": []}
             
@@ -84,8 +122,8 @@ class DashboardWebServer:
                 return {"connections": []}
         
         @self.app.get("/api/alerts")
-        async def get_recent_alerts():
-            """Get recent IDS alerts"""
+        async def get_recent_alerts() -> Dict[str, List[Any]]:
+            """Get recent IDS alerts from the last 24 hours (high/medium severity only)."""
             if not self.db_manager:
                 return {"alerts": []}
 
@@ -93,7 +131,15 @@ class DashboardWebServer:
                 # Get alerts from last 24 hours
                 since = datetime.now() - timedelta(hours=24)
                 alerts = await self.db_manager.get_recent_alerts(since, limit=50)
-                return {"alerts": alerts}
+
+                # Filter to show only high and medium severity alerts (exclude low severity)
+                # This focuses the dashboard on noteworthy events
+                important_alerts = [
+                    alert for alert in alerts
+                    if alert.get('severity', '').lower() in ['high', 'medium', 'critical']
+                ]
+
+                return {"alerts": important_alerts}
             except Exception as e:
                 self.logger.error(f"Error fetching recent alerts: {e}")
                 return {"alerts": []}
@@ -127,6 +173,20 @@ class DashboardWebServer:
             except Exception as e:
                 self.logger.error(f"Error fetching authentication events: {e}")
                 return {"events": []}
+
+        @self.app.get("/api/authentication-stats")
+        async def get_authentication_stats(hours: int = 24):
+            """Get authentication success/failed statistics"""
+            if not self.db_manager:
+                return {"successful": 0, "failed": 0}
+
+            try:
+                since = datetime.now() - timedelta(hours=hours)
+                stats = await self.db_manager.get_authentication_stats(since)
+                return stats
+            except Exception as e:
+                self.logger.error(f"Error fetching authentication stats: {e}")
+                return {"successful": 0, "failed": 0}
 
         # Enhanced Log Management Endpoints
         @self.app.post("/api/clear-logs")
@@ -353,6 +413,71 @@ class DashboardWebServer:
             """Get current attack execution status"""
             return {"status": "ready", "active_attacks": []}
 
+
+
+        @self.app.post("/api/block-ip")
+        async def block_ip(request: Request):
+            """Block an IP address by adding it to the blocklist"""
+            try:
+                data = await request.json()
+                ip_address = data.get('ip_address')
+                reason = data.get('reason', 'Blocked from dashboard')
+
+                if not ip_address:
+                    return JSONResponse(
+                        status_code=400,
+                        content={"error": "IP address is required"}
+                    )
+
+                # Add IP to blocklist in database
+                if self.db_manager:
+                    await self.db_manager.add_blocked_ip(ip_address, reason)
+                    self.logger.info(f"IP {ip_address} blocked: {reason}")
+
+                    return {
+                        "success": True,
+                        "message": f"IP {ip_address} has been blocked",
+                        "ip": ip_address
+                    }
+                else:
+                    return JSONResponse(
+                        status_code=500,
+                        content={"error": "Database not available"}
+                    )
+
+            except Exception as e:
+                self.logger.error(f"Error blocking IP: {e}")
+                return JSONResponse(
+                    status_code=500,
+                    content={"error": f"Failed to block IP: {str(e)}"}
+                )
+
+        @self.app.get("/api/unique-ips")
+        async def get_unique_ips():
+            """Get list of unique attacking IPs with event counts"""
+            if not self.db_manager:
+                return {"ips": []}
+
+            try:
+                ips = await self.db_manager.get_unique_attacking_ips()
+                return {"ips": ips}
+            except Exception as e:
+                self.logger.error(f"Error fetching unique IPs: {e}")
+                return {"ips": []}
+
+        @self.app.get("/api/ip-timeline/{ip_address}")
+        async def get_ip_timeline(ip_address: str):
+            """Get chronological timeline of events for a specific IP"""
+            if not self.db_manager:
+                return {"events": []}
+
+            try:
+                events = await self.db_manager.get_ip_event_timeline(ip_address)
+                return {"ip": ip_address, "events": events}
+            except Exception as e:
+                self.logger.error(f"Error fetching IP timeline: {e}")
+                return {"ip": ip_address, "events": []}
+
         @self.app.websocket("/ws")
         async def websocket_endpoint(websocket: WebSocket):
             """WebSocket endpoint for real-time updates"""
@@ -360,13 +485,63 @@ class DashboardWebServer:
         
         # Mount static files
         self.app.mount("/static", StaticFiles(directory=str(self.static_dir)), name="static")
-    
-    async def _handle_websocket(self, websocket: WebSocket):
-        """Handle WebSocket connections for real-time updates"""
+
+        # Exception handlers
+        @self.app.exception_handler(404)
+        async def not_found_handler(request: Request, exc):
+            """Handle 404 Not Found errors"""
+            self.logger.warning(f"404 Not Found: {request.url.path}")
+            return self.templates.TemplateResponse(
+                "error.html",
+                {
+                    "request": request,
+                    "code": 404,
+                    "title": "Page Not Found",
+                    "message": f"The page '{request.url.path}' could not be found."
+                },
+                status_code=404
+            )
+
+        @self.app.exception_handler(500)
+        async def internal_error_handler(request: Request, exc):
+            """Handle 500 Internal Server errors"""
+            self.logger.error(f"500 Internal Server Error: {exc}")
+            return self.templates.TemplateResponse(
+                "error.html",
+                {
+                    "request": request,
+                    "code": 500,
+                    "title": "Internal Server Error",
+                    "message": "An unexpected error occurred. Please try again later."
+                },
+                status_code=500
+            )
+
+        @self.app.exception_handler(Exception)
+        async def general_exception_handler(request: Request, exc: Exception):
+            """Handle general exceptions"""
+            self.logger.error(f"Unhandled exception: {exc}", exc_info=True)
+            return JSONResponse(
+                status_code=500,
+                content={
+                    "error": "Internal Server Error",
+                    "message": "An unexpected error occurred. Please try again later."
+                }
+            )
+
+    async def _handle_websocket(self, websocket: WebSocket) -> None:
+        """Handle WebSocket connections for real-time updates.
+
+        Maintains persistent connection and sends periodic statistics updates
+        to connected clients with configurable intervals.
+
+        Args:
+            websocket: WebSocket connection instance
+        """
         await websocket.accept()
         self.active_connections.append(websocket)
         self.logger.info(f"WebSocket connected. Active connections: {len(self.active_connections)}")
-        
+
         try:
             # Get configurable update interval (default 5 seconds for better performance)
             update_interval = DASHBOARD_CONFIG.get("performance", {}).get("websocket_update_interval", 5)
@@ -388,12 +563,16 @@ class DashboardWebServer:
             if websocket in self.active_connections:
                 self.active_connections.remove(websocket)
 
-    async def broadcast_event(self, event_type_or_data, data=None):
-        """Broadcast event to all connected WebSocket clients
+    async def broadcast_event(self, event_type_or_data: Any, data: Optional[Any] = None) -> None:
+        """Broadcast event to all connected WebSocket clients.
+
+        Supports two calling patterns:
+        1. broadcast_event(event_type, data) - separate type and data
+        2. broadcast_event(event_data) - complete event data dict
 
         Args:
-            event_type_or_data: Either event type string (when data is provided) or complete event data dict
-            data: Event data (when first parameter is event type)
+            event_type_or_data: Either event type string or complete event data dict
+            data: Optional event data (when first parameter is event type)
         """
         if not self.active_connections:
             return
@@ -425,8 +604,15 @@ class DashboardWebServer:
             if websocket in self.active_connections:
                 self.active_connections.remove(websocket)
     
-    async def _get_cached_stats(self) -> Dict:
-        """Get cached statistics with refresh logic"""
+    async def _get_cached_stats(self) -> Dict[str, Any]:
+        """Get cached statistics with automatic refresh logic.
+
+        Returns cached statistics if cache is still valid, otherwise fetches
+        fresh statistics from the database. Cache duration is configurable.
+
+        Returns:
+            Dictionary containing system statistics including connections, alerts, and status
+        """
         now = datetime.now()
 
         # Get configurable cache duration (default 30 seconds)
@@ -459,6 +645,8 @@ class DashboardWebServer:
                 self.db_manager.get_service_breakdown(since),
                 self.db_manager.get_hourly_activity(since),
                 self.db_manager.get_alert_severity_breakdown(since),
+                self.db_manager.get_authentication_stats(since),
+                self.db_manager.get_geo_distribution(since),
                 return_exceptions=True
             )
 
@@ -468,6 +656,8 @@ class DashboardWebServer:
                 "service_breakdown": additional_stats[1] if not isinstance(additional_stats[1], Exception) else {},
                 "hourly_activity": additional_stats[2] if not isinstance(additional_stats[2], Exception) else [],
                 "alert_severity": additional_stats[3] if not isinstance(additional_stats[3], Exception) else {},
+                "auth_stats": additional_stats[4] if not isinstance(additional_stats[4], Exception) else {"successful": 0, "failed": 0},
+                "geo_distribution": additional_stats[5] if not isinstance(additional_stats[5], Exception) else {},
                 "last_updated": datetime.now().isoformat()
             }
             
@@ -500,28 +690,41 @@ class DashboardWebServer:
             "service_breakdown": {"ssh": 0, "http": 0},
             "hourly_activity": [],
             "alert_severity": {"high": 0, "medium": 0, "low": 0},
+            "auth_stats": {"successful": 0, "failed": 0},
+            "geo_distribution": {},
             "last_updated": datetime.now().isoformat()
         }
     
 
     
-    async def initialize(self, db_manager: DatabaseManager):
-        """Initialize the web server with database manager"""
+    async def initialize(self, db_manager: DatabaseManager) -> None:
+        """Initialize the web server with database manager.
+
+        Args:
+            db_manager: Database manager instance for data access
+        """
         self.db_manager = db_manager
         self.logger.info("Dashboard web server initialized")
-    
-    async def start(self):
-        """Start the web server"""
+
+    async def start(self) -> None:
+        """Start the web server with configured host and port.
+
+        Starts the FastAPI application using Uvicorn with configuration
+        from DASHBOARD_CONFIG. Respects the enabled flag in configuration.
+
+        Raises:
+            Exception: If server fails to start or bind to port
+        """
         if not DASHBOARD_CONFIG["enabled"]:
             self.logger.info("Dashboard is disabled in configuration")
             return
-        
+
         host = DASHBOARD_CONFIG["host"]
         port = DASHBOARD_CONFIG["port"]
         debug = DASHBOARD_CONFIG["debug"]
-        
+
         self.logger.info(f"Starting dashboard web server on {host}:{port}")
-        
+
         # Create server config
         config = uvicorn.Config(
             app=self.app,
@@ -530,22 +733,25 @@ class DashboardWebServer:
             log_level="info" if debug else "warning",
             access_log=debug
         )
-        
+
         # Start server
         server = uvicorn.Server(config)
         await server.serve()
-    
-    async def stop(self):
-        """Stop the web server"""
+
+    async def stop(self) -> None:
+        """Stop the web server and close all connections.
+
+        Gracefully closes all active WebSocket connections and cleans up resources.
+        """
         self.logger.info("Stopping dashboard web server")
-        
+
         # Close all WebSocket connections
         for websocket in self.active_connections:
             try:
                 await websocket.close()
             except Exception:
                 pass
-        
+
         self.active_connections.clear()
 
     async def get_alert_details(self, alert_id: int):
@@ -726,7 +932,17 @@ class DashboardWebServer:
         return list(set(recommendations))  # Remove duplicates
 
     def _get_geolocation_info(self, ip_address):
-        """Get geolocation information for IP address with improved accuracy"""
+        """Get geolocation information for IP address with improved accuracy
+
+        IMPORTANT: This system uses SIMULATED geolocation data for educational purposes.
+        This is NOT real attack data. The geolocation is generated based on IP ranges
+        for demonstration and testing purposes only.
+
+        For production use with real geolocation data, integrate with:
+        - MaxMind GeoIP2 (requires license)
+        - IPinfo.io API (requires API key)
+        - IP2Location database (requires license)
+        """
         try:
             import ipaddress
             ip = ipaddress.ip_address(ip_address)
@@ -740,7 +956,8 @@ class DashboardWebServer:
                     'longitude': None,
                     'isp': 'Private Network',
                     'is_private': True,
-                    'accuracy': 'high'
+                    'accuracy': 'high',
+                    'data_type': 'deterministic'  # Not simulated, actual private network
                 }
 
             # Handle localhost/loopback
@@ -752,7 +969,8 @@ class DashboardWebServer:
                     'longitude': None,
                     'isp': 'Loopback',
                     'is_private': True,
-                    'accuracy': 'high'
+                    'accuracy': 'high',
+                    'data_type': 'deterministic'  # Not simulated, actual loopback
                 }
 
             # Handle reserved/special addresses
@@ -764,7 +982,8 @@ class DashboardWebServer:
                     'longitude': None,
                     'isp': 'Reserved',
                     'is_private': True,
-                    'accuracy': 'high'
+                    'accuracy': 'high',
+                    'data_type': 'deterministic'  # Not simulated, actual reserved address
                 }
 
             # For public IPs, use a basic geolocation approach
@@ -785,7 +1004,23 @@ class DashboardWebServer:
             }
 
     def _get_public_ip_geolocation(self, ip_address):
-        """Get geolocation for public IP addresses"""
+        """Get geolocation for public IP addresses - SIMULATED FOR EDUCATIONAL PURPOSES
+
+        IMPORTANT: This method returns SIMULATED geolocation data based on IP ranges.
+        This is NOT real attack data and should NOT be used for production threat intelligence.
+
+        The simulation is based on first octet ranges:
+        - 1-50: United States
+        - 51-100: Europe
+        - 101-150: Asia
+        - 151-200: Various
+        - 201-255: Global
+
+        For production systems, integrate with real GeoIP services:
+        - MaxMind GeoIP2 (most accurate, requires license)
+        - IPinfo.io (API-based, requires API key)
+        - IP2Location (database-based, requires license)
+        """
         # This is a simplified implementation for educational purposes
         # In production, integrate with services like MaxMind, IPinfo, or similar
 
@@ -820,7 +1055,8 @@ class DashboardWebServer:
             'isp': 'Educational ISP Simulation',
             'is_private': False,
             'accuracy': 'low',
-            'note': 'Educational geolocation - simulated data for testing purposes. Real production systems would use actual GeoIP databases.'
+            'data_type': 'simulated',  # Clearly marked as simulated
+            'note': 'EDUCATIONAL GEOLOCATION - Simulated data for testing purposes. Real production systems would use actual GeoIP databases (MaxMind, IPinfo, IP2Location).'
         }
 
     def _validate_attack_legitimacy(self, alert, connection_data=None):
@@ -1068,6 +1304,8 @@ class DashboardWebServer:
 
         return timeline
 
+
+
     async def _execute_attack_scenario(self, attack_type: str):
         """Execute a specific attack scenario and return realistic results"""
         # Simulate realistic attacker information
@@ -1163,7 +1401,6 @@ class DashboardWebServer:
         except Exception as e:
             self.logger.error(f"Attack execution failed: {e}")
             return {"success": False, "error": str(e)}
-
     async def _execute_ssh_attack(self, source_ip: str):
         """Execute SSH brute force attack"""
         self.logger.info(f"*** AUTOMATED SSH BRUTE FORCE ATTACK INITIATED ***")
@@ -1201,7 +1438,36 @@ class DashboardWebServer:
                 stdout, stderr = await process.communicate(input=f"{password}\nexit\n".encode())
 
                 # Check if authentication was successful based on return code
-                if process.returncode == 0:
+                success = process.returncode == 0
+
+                # Log authentication event to database
+                auth_event = {
+                    'source_ip': source_ip,
+                    'source_port': 12345 + i,  # Simulate different source ports
+                    'destination_port': 2222,
+                    'service_type': 'ssh',
+                    'session_id': f"ssh_attack_{source_ip}_{i}",
+                    'username': username,
+                    'password': password,
+                    'auth_method': 'password',
+                    'success': success,
+                    'failure_reason': None if success else 'Invalid credentials'
+                }
+                await self.db_manager.log_authentication_event(auth_event)
+
+                # Log alert for failed attempts
+                if not success:
+                    alert_data = {
+                        'alert_type': 'ssh_brute_force',
+                        'severity': 'high',
+                        'source_ip': source_ip,
+                        'destination_ip': '127.0.0.1',
+                        'description': f'SSH brute force attempt: {username}:{password}',
+                        'details': {'username': username, 'attempt': i}
+                    }
+                    await self.db_manager.log_alert(alert_data)
+
+                if success:
                     successful_logins.append(f"{username}:{password}")
                     self.logger.warning(f"*** SSH LOGIN SUCCESS: {username}:{password} ***")
                 else:
@@ -1254,12 +1520,34 @@ class DashboardWebServer:
                     response1 = await session.get(f"http://127.0.0.1:8080/search?q={payload}")
                     self.logger.info(f"   -> GET /search?q={payload} -> Status: {response1.status}")
 
+                    # Log alert for SQL injection attempt
+                    alert_data = {
+                        'alert_type': 'sql_injection',
+                        'severity': 'high',
+                        'source_ip': source_ip,
+                        'destination_ip': '127.0.0.1',
+                        'description': f'SQL injection attempt: {payload}',
+                        'details': {'payload': payload, 'endpoint': '/search'}
+                    }
+                    await self.db_manager.log_alert(alert_data)
+
                     await asyncio.sleep(0.5)
 
                     # Attack login endpoint
                     response2 = await session.post("http://127.0.0.1:8080/login",
                                                  data={"username": payload, "password": "test"})
                     self.logger.info(f"   -> POST /login (username={payload}) -> Status: {response2.status}")
+
+                    # Log alert for login endpoint attack
+                    alert_data = {
+                        'alert_type': 'sql_injection',
+                        'severity': 'high',
+                        'source_ip': source_ip,
+                        'destination_ip': '127.0.0.1',
+                        'description': f'SQL injection attempt: {payload}',
+                        'details': {'payload': payload, 'endpoint': '/login'}
+                    }
+                    await self.db_manager.log_alert(alert_data)
 
                     if response1.status == 200 or response2.status == 200:
                         successful_injections += 1
@@ -1284,12 +1572,36 @@ class DashboardWebServer:
         ]
 
         async with aiohttp.ClientSession() as session:
-            for payload in payloads:
+            for i, payload in enumerate(payloads, 1):
                 try:
                     # Attack various endpoints
                     await session.get(f"http://127.0.0.1:8080/search?q={payload}")
+
+                    # Log alert for XSS attempt
+                    alert_data = {
+                        'alert_type': 'xss_attack',
+                        'severity': 'high',
+                        'source_ip': source_ip,
+                        'destination_ip': '127.0.0.1',
+                        'description': f'XSS attack attempt: {payload}',
+                        'details': {'payload': payload, 'endpoint': '/search'}
+                    }
+                    await self.db_manager.log_alert(alert_data)
+
                     await session.post("http://127.0.0.1:8080/comment",
                                      data={"comment": payload})
+
+                    # Log alert for comment endpoint attack
+                    alert_data = {
+                        'alert_type': 'xss_attack',
+                        'severity': 'high',
+                        'source_ip': source_ip,
+                        'destination_ip': '127.0.0.1',
+                        'description': f'XSS attack attempt: {payload}',
+                        'details': {'payload': payload, 'endpoint': '/comment'}
+                    }
+                    await self.db_manager.log_alert(alert_data)
+
                     await asyncio.sleep(0.5)
 
                 except Exception as e:
@@ -1308,10 +1620,34 @@ class DashboardWebServer:
         ]
 
         async with aiohttp.ClientSession() as session:
-            for payload in payloads:
+            for i, payload in enumerate(payloads, 1):
                 try:
                     await session.get(f"http://127.0.0.1:8080/file?path={payload}")
+
+                    # Log alert for directory traversal attempt
+                    alert_data = {
+                        'alert_type': 'directory_traversal',
+                        'severity': 'high',
+                        'source_ip': source_ip,
+                        'destination_ip': '127.0.0.1',
+                        'description': f'Directory traversal attempt: {payload}',
+                        'details': {'payload': payload, 'endpoint': '/file'}
+                    }
+                    await self.db_manager.log_alert(alert_data)
+
                     await session.get(f"http://127.0.0.1:8080/download/{payload}")
+
+                    # Log alert for download endpoint attack
+                    alert_data = {
+                        'alert_type': 'directory_traversal',
+                        'severity': 'high',
+                        'source_ip': source_ip,
+                        'destination_ip': '127.0.0.1',
+                        'description': f'Directory traversal attempt: {payload}',
+                        'details': {'payload': payload, 'endpoint': '/download'}
+                    }
+                    await self.db_manager.log_alert(alert_data)
+
                     await asyncio.sleep(0.5)
 
                 except Exception as e:
@@ -1330,6 +1666,18 @@ class DashboardWebServer:
                 )
                 writer.close()
                 await writer.wait_closed()
+
+                # Log alert for port scan attempt
+                alert_data = {
+                    'alert_type': 'port_scan',
+                    'severity': 'medium',
+                    'source_ip': source_ip,
+                    'destination_ip': '127.0.0.1',
+                    'description': f'Port scan detected: connection to port {port}',
+                    'details': {'port': port, 'protocol': 'TCP'}
+                }
+                await self.db_manager.log_alert(alert_data)
+
                 await asyncio.sleep(0.1)
 
             except Exception:

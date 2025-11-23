@@ -1,0 +1,26 @@
+{
+  "timestamp": "2025-10-07T12:18:18.180143",
+  "summary": {
+    "total_attack_patterns": 0,
+    "unique_attackers": 0,
+    "most_targeted_service": "none",
+    "total_connections_analyzed": 0
+  },
+  "top_attackers": {},
+  "attack_patterns": {},
+  "service_activity": {},
+  "time_patterns": {
+    "hourly": {
+      "15": 5
+    },
+    "daily": {
+      "Friday": 5
+    }
+  },
+  "ioc_summary": {
+    "unique_ips": 0,
+    "unique_domains": 0,
+    "attack_patterns": 0,
+    "user_agents": 0
+  }
+}

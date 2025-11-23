@@ -1,0 +1,29 @@
+{
+  "timestamp": "2025-10-17T22:46:03.276501",
+  "summary": {
+    "total_attack_patterns": 15,
+    "unique_attackers": 0,
+    "most_targeted_service": "none",
+    "total_connections_analyzed": 0
+  },
+  "top_attackers": {},
+  "attack_patterns": {
+    "anomaly_detection": 10,
+    "port_scan": 5
+  },
+  "service_activity": {},
+  "time_patterns": {
+    "hourly": {
+      "21": 8
+    },
+    "daily": {
+      "Friday": 8
+    }
+  },
+  "ioc_summary": {
+    "unique_ips": 0,
+    "unique_domains": 1,
+    "attack_patterns": 0,
+    "user_agents": 0
+  }
+}

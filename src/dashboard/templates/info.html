@@ -17,97 +17,139 @@
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <!-- Prism.js for code highlighting -->
     <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet">
+    <!-- Shared Design System -->
+    <link href="/static/style.css" rel="stylesheet">
     
     <style>
-        body {
-            background-color: #f8f9fa;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-        }
-        
-        .navbar {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        }
-        
-        .hero-section {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 4rem 0;
-        }
-        
-        .card {
-            border: none;
-            border-radius: 15px;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        .section-header {
+            margin-top: 3rem;
             margin-bottom: 2rem;
+            padding-bottom: 1rem;
+            border-bottom: 2px solid var(--accent-blue);
         }
-        
+
+        .info-box {
+            background: rgba(22, 33, 62, 0.6);
+            border-left: 4px solid var(--accent-blue);
+            padding: 1.5rem;
+            margin: 1.5rem 0;
+            border-radius: 8px;
+            transition: all 0.3s ease;
+        }
+
+        .info-box:hover {
+            background: rgba(22, 33, 62, 0.8);
+            border-left-color: var(--accent-red);
+        }
+
+        .info-box i {
+            color: var(--accent-red);
+            margin-right: 0.5rem;
+        }
+
+        .feature-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 2rem;
+            margin: 2rem 0;
+        }
+
+        .feature-card {
+            background: rgba(22, 33, 62, 0.5);
+            border: 1px solid rgba(200, 200, 200, 0.1);
+            padding: 2rem;
+            border-radius: 12px;
+            text-align: center;
+            transition: all 0.3s ease;
+        }
+
+        .feature-card:hover {
+            background: rgba(22, 33, 62, 0.8);
+            transform: translateY(-4px);
+            border-color: var(--accent-red);
+        }
+
         .feature-icon {
-            font-size: 3rem;
-            color: #667eea;
+            font-size: 2.5rem;
+            color: var(--accent-red);
             margin-bottom: 1rem;
         }
-        
-        .security-badge {
-            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
-            color: white;
-            padding: 0.5rem 1rem;
-            border-radius: 25px;
-            font-weight: bold;
-            display: inline-block;
-            margin: 0.25rem;
-        }
-        
-        .tech-stack-item {
-            background: #e9ecef;
-            padding: 0.5rem 1rem;
-            border-radius: 20px;
-            margin: 0.25rem;
-            display: inline-block;
-            font-weight: 500;
-        }
-        
-        .warning-box {
-            background: #fff3cd;
-            border: 1px solid #ffeaa7;
-            border-radius: 10px;
-            padding: 1rem;
-            margin: 1rem 0;
-        }
-        
-        .danger-box {
-            background: #f8d7da;
-            border: 1px solid #f5c6cb;
-            border-radius: 10px;
-            padding: 1rem;
-            margin: 1rem 0;
-        }
-        
-        .success-box {
-            background: #d1edff;
-            border: 1px solid #bee5eb;
-            border-radius: 10px;
-            padding: 1rem;
-            margin: 1rem 0;
-        }
-        
+
         .code-block {
-            background: #2d3748;
-            color: #e2e8f0;
-            padding: 1rem;
-            border-radius: 10px;
+            background: #0f0f1e;
+            border: 1px solid var(--accent-blue);
+            border-radius: 8px;
+            padding: 1.5rem;
+            margin: 1.5rem 0;
             overflow-x: auto;
-            margin: 1rem 0;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9rem;
+            line-height: 1.6;
         }
-        
-        .nav-pills .nav-link.active {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+
+        .tooltip-icon {
+            cursor: help;
+            color: var(--accent-blue);
+            margin-left: 0.5rem;
+            transition: color 0.3s ease;
         }
-        
-        .section-header {
-            border-bottom: 3px solid #667eea;
-            padding-bottom: 0.5rem;
-            margin-bottom: 2rem;
+
+        .tooltip-icon:hover {
+            color: var(--accent-red);
+        }
+
+        .main-content {
+            flex: 1;
+            padding: 2rem;
+        }
+
+        .nav-link.active {
+            color: var(--accent-red) !important;
+            border-bottom: 3px solid var(--accent-red);
+        }
+
+        /* Bootstrap Card Overrides - High Specificity */
+        .card {
+            background: rgba(22, 33, 62, 0.5) !important;
+            border: 1px solid rgba(200, 200, 200, 0.1) !important;
+            border-radius: 12px !important;
+            color: #c0c0c0 !important;
+        }
+
+        .card * {
+            color: #c0c0c0;
+        }
+
+        .card h1, .card h2, .card h3, .card h4, .card h5, .card h6 {
+            color: #d0d0d0 !important;
+        }
+
+        .card-header {
+            background: rgba(22, 33, 62, 0.6) !important;
+            border-bottom: 1px solid rgba(200, 200, 200, 0.1) !important;
+            color: #d0d0d0 !important;
+        }
+
+        .card-header h1, .card-header h2, .card-header h3,
+        .card-header h4, .card-header h5, .card-header h6 {
+            color: #d0d0d0 !important;
+            margin-bottom: 0 !important;
+        }
+
+        .card-body {
+            color: #c0c0c0 !important;
+        }
+
+        .card-body p, .card-body span, .card-body div {
+            color: #c0c0c0 !important;
+        }
+
+        .card-title {
+            color: #d0d0d0 !important;
+        }
+
+        .card-text {
+            color: #c0c0c0 !important;
         }
     </style>
 </head>
@@ -125,14 +167,19 @@
             <div class="collapse navbar-collapse" id="navbarNav">
                 <ul class="navbar-nav ms-auto">
                     <li class="nav-item">
-                        <a class="nav-link" href="/">
-                            <i class="fas fa-tachometer-alt me-1"></i>Dashboard
-                        </a>
+                        <a class="nav-link" href="/">Dashboard</a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link active" href="/info">
-                            <i class="fas fa-info-circle me-1"></i>Information
-                        </a>
+                        <a class="nav-link" href="/ip-tracking">IP Tracking</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/attacks">Attacks</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link active" href="/info">Info</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/how-it-works">How It Works</a>
                     </li>
                 </ul>
             </div>
@@ -423,7 +470,7 @@
                         <h2 class="section-header">System Architecture & Data Flow</h2>
 
                         <div class="text-center mb-4">
-                            <img src="/static/system_architecture.svg" alt="PHIDS System Architecture" class="img-fluid" style="max-width: 100%; height: auto; border: 1px solid #ddd; border-radius: 10px; padding: 10px; background: white;">
+                            <img src="/static/system_architecture.svg" alt="PHIDS System Architecture" class="img-fluid" style="max-width: 100%; height: auto; border: 1px solid #3a3a4e; border-radius: 10px; padding: 10px; background: #2a2a3e;">
                         </div>
 
                         <h4><i class="fas fa-flow-chart me-2 text-primary"></i>Data Flow Process</h4>
@@ -469,7 +516,7 @@
                             </div>
                             <div class="col-md-4">
                                 <div class="card border-danger">
-                                    <div class="card-header bg-danger text-white">
+                                    <div class="card-header bg-danger" style="color: #e8e8e8;">
                                         <h6><i class="fas fa-shield-alt me-2"></i>IDS Engine</h6>
                                     </div>
                                     <div class="card-body">
@@ -484,7 +531,7 @@
                             </div>
                             <div class="col-md-4">
                                 <div class="card border-primary">
-                                    <div class="card-header bg-primary text-white">
+                                    <div class="card-header bg-primary" style="color: #e8e8e8;">
                                         <h6><i class="fas fa-chart-line me-2"></i>Dashboard</h6>
                                     </div>
                                     <div class="card-body">

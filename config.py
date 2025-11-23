@@ -47,9 +47,9 @@ IDS_CONFIG = {
     },
     "anomaly_detection": {
         "enabled": True,
-        "packet_rate_threshold": 500,  # packets per second (increased to reduce false positives)
-        "connection_rate_threshold": 100,  # connections per minute (increased to reduce false positives)
-        "unusual_port_threshold": 20  # connections to unusual ports (increased to reduce false positives)
+        "packet_rate_threshold": 1000,  # packets per second (high threshold to reduce false positives)
+        "connection_rate_threshold": 200,  # connections per minute (high threshold to reduce false positives)
+        "unusual_port_threshold": 50  # connections to unusual ports (high threshold to reduce false positives)
     }
 }
 

@@ -10,6 +10,7 @@ from datetime import datetime
 from config import HONEYPOT_CONFIG
 from .base_honeypot import BaseHoneypot
 from ..core.enhanced_logger import EnhancedHoneypotLogger, ConnectionStatus, ServiceType
+from ..dashboard.event_broadcaster import event_broadcaster
 
 
 class HTTPHoneypot(BaseHoneypot):
@@ -28,15 +29,20 @@ class HTTPHoneypot(BaseHoneypot):
         }
         # Initialize enhanced logger
         self.enhanced_logger = EnhancedHoneypotLogger("HTTP", self.logger)
+        # Store reference to main event loop for async operations
+        self.main_loop = None
         
     async def start(self):
         """Start the HTTP honeypot server"""
         if not self.is_enabled():
             self.logger.info("HTTP honeypot is disabled")
             return
-        
+
+        # Store reference to main event loop for async operations
+        self.main_loop = asyncio.get_event_loop()
+
         self.logger.info(f"Starting HTTP honeypot on {self.config['bind_address']}:{self.config['port']}")
-        
+
         try:
             self.server = await asyncio.start_server(
                 self.handle_connection,
@@ -45,10 +51,10 @@ class HTTPHoneypot(BaseHoneypot):
             )
             self.running = True
             self.logger.info(f"HTTP honeypot started successfully")
-            
+
             async with self.server:
                 await self.server.serve_forever()
-                
+
         except Exception as e:
             self.logger.error(f"Failed to start HTTP honeypot: {e}")
             self.running = False
@@ -356,27 +362,27 @@ class HTTPHoneypot(BaseHoneypot):
         """Generate HTTP response based on request"""
         path = request_info['path'].split('?')[0]  # Remove query params
         method = request_info['method']
-        
+
         # Check for common attack patterns
         if self.is_attack_pattern(request_info):
             return self.generate_error_response(403, "Forbidden")
-        
-        # Handle different paths
-        if path in self.fake_pages:
-            content = self.fake_pages[path]
-            return self.generate_success_response(content)
-        
-        # Handle login attempts
+
+        # Handle login attempts (check POST before serving GET pages)
         if path == "/login" and method == "POST":
             return self.handle_login_attempt(request_info)
 
-        # Handle admin login attempts
+        # Handle admin login attempts (check POST before serving GET pages)
         if path == "/admin" and method == "POST":
             return self.handle_admin_login_attempt(request_info)
 
         # Handle other admin-related POST requests
         if path in ["/wp-admin", "/phpmyadmin"] and method == "POST":
             return self.handle_admin_login_attempt(request_info)
+
+        # Handle different paths (GET requests for pages)
+        if path in self.fake_pages:
+            content = self.fake_pages[path]
+            return self.generate_success_response(content)
         
         # Handle common vulnerable paths
         vulnerable_paths = [
@@ -661,31 +667,96 @@ Password: <input type="password" name="password"><br>
         ]
 
         if (username.lower(), password.lower()) in weak_credentials:
-            # Simulate successful login - this is intentional honeypot behavior
-            content = f"""<html>
-<head><title>Admin Dashboard - {username}</title></head>
-<body>
-<h1>Welcome to Admin Dashboard</h1>
-<p>Successfully logged in as: <strong>{username}</strong></p>
-<div style="border: 1px solid #ccc; padding: 10px; margin: 10px 0;">
-    <h3>System Status</h3>
-    <p>Server: Online</p>
-    <p>Database: Connected</p>
-    <p>Users: 1,247 registered</p>
-    <p>Last backup: 2 days ago</p>
-</div>
-<div style="border: 1px solid #ccc; padding: 10px; margin: 10px 0;">
-    <h3>Quick Actions</h3>
-    <p><a href="/admin/users">Manage Users</a></p>
-    <p><a href="/admin/settings">System Settings</a></p>
-    <p><a href="/admin/logs">View Logs</a></p>
-    <p><a href="/admin/backup">Create Backup</a></p>
-</div>
-<p><em>Note: This is a honeypot simulation. In reality, this would be a security vulnerability.</em></p>
-</body>
-</html>"""
-            return self.generate_success_response(content)
+            # Redirect to success page on the dashboard
+            session_id = self.generate_session_id()
+            redirect_url = f"http://127.0.0.1:5001/success?username={urllib.parse.quote(username)}&session_id={session_id}"
+
+            # Log successful authentication event to database
+            auth_event_data = {
+                'timestamp': datetime.now(),
+                'source_ip': request_info.get('source_ip', 'unknown'),
+                'source_port': request_info.get('source_port', 0),
+                'destination_port': self.config['port'],
+                'service_type': 'http',
+                'session_id': session_id,
+                'username': username,
+                'password': password,
+                'auth_method': 'form',
+                'success': True,
+                'failure_reason': None,
+                'user_agent': request_info.get('user_agent', 'unknown'),
+                'connection_data': {
+                    'path': request_info.get('path', '/admin'),
+                    'method': 'POST',
+                    'auth_type': 'form'
+                }
+            }
+
+            # Schedule database logging and broadcasting (async operation)
+            import asyncio
+            if hasattr(self, 'main_loop') and self.main_loop:
+                try:
+                    # Log to database
+                    asyncio.run_coroutine_threadsafe(
+                        self.db_manager.log_authentication_event(auth_event_data),
+                        self.main_loop
+                    )
+                    # Broadcast to dashboard for real-time display
+                    asyncio.run_coroutine_threadsafe(
+                        event_broadcaster.broadcast_authentication(auth_event_data),
+                        self.main_loop
+                    )
+                except Exception as e:
+                    self.logger.error(f"Failed to log/broadcast authentication event: {e}")
+
+            response = f"""HTTP/1.1 302 Found\r
+Server: {self.config['banner']}\r
+Location: {redirect_url}\r
+Content-Length: 0\r
+Connection: close\r
+\r
+"""
+            return response
         else:
+            # Log failed authentication event to database
+            session_id = self.generate_session_id()
+            auth_event_data = {
+                'timestamp': datetime.now(),
+                'source_ip': request_info.get('source_ip', 'unknown'),
+                'source_port': request_info.get('source_port', 0),
+                'destination_port': self.config['port'],
+                'service_type': 'http',
+                'session_id': session_id,
+                'username': username,
+                'password': password,
+                'auth_method': 'form',
+                'success': False,
+                'failure_reason': 'Invalid credentials',
+                'user_agent': request_info.get('user_agent', 'unknown'),
+                'connection_data': {
+                    'path': request_info.get('path', '/admin'),
+                    'method': 'POST',
+                    'auth_type': 'form'
+                }
+            }
+
+            # Schedule database logging and broadcasting (async operation)
+            import asyncio
+            if hasattr(self, 'main_loop') and self.main_loop:
+                try:
+                    # Log to database
+                    asyncio.run_coroutine_threadsafe(
+                        self.db_manager.log_authentication_event(auth_event_data),
+                        self.main_loop
+                    )
+                    # Broadcast to dashboard for real-time display
+                    asyncio.run_coroutine_threadsafe(
+                        event_broadcaster.broadcast_authentication(auth_event_data),
+                        self.main_loop
+                    )
+                except Exception as e:
+                    self.logger.error(f"Failed to log/broadcast authentication event: {e}")
+
             # Return login failed for other credentials
             content = f"""<html>
 <head><title>Login Failed</title></head>

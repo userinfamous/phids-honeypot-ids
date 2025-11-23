@@ -29,7 +29,7 @@ class DatabaseManager:
     
     async def _create_tables(self, db):
         """Create all necessary tables"""
-        
+
         # Honeypot connections table
         await db.execute("""
             CREATE TABLE IF NOT EXISTS honeypot_connections (
@@ -47,9 +47,17 @@ class DatabaseManager:
                 commands TEXT,
                 payloads TEXT,
                 user_agent TEXT,
-                status TEXT DEFAULT 'active'
+                status TEXT DEFAULT 'active',
+                country TEXT
             )
         """)
+
+        # Add country column if it doesn't exist (migration for existing databases)
+        try:
+            await db.execute("ALTER TABLE honeypot_connections ADD COLUMN country TEXT")
+        except Exception:
+            # Column already exists, ignore error
+            pass
         
         # IDS alerts table
         await db.execute("""
@@ -137,18 +145,32 @@ class DatabaseManager:
                 connection_data TEXT
             )
         """)
-        
+
+        # Blocked IPs table
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS blocked_ips (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ip_address TEXT UNIQUE NOT NULL,
+                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+                reason TEXT,
+                blocked_by TEXT DEFAULT 'dashboard'
+            )
+        """)
+
         # Create indexes for better performance
         await db.execute("CREATE INDEX IF NOT EXISTS idx_connections_timestamp ON honeypot_connections(timestamp)")
         await db.execute("CREATE INDEX IF NOT EXISTS idx_connections_source_ip ON honeypot_connections(source_ip)")
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_connections_country ON honeypot_connections(country)")
         await db.execute("CREATE INDEX IF NOT EXISTS idx_alerts_timestamp ON ids_alerts(timestamp)")
         await db.execute("CREATE INDEX IF NOT EXISTS idx_alerts_source_ip ON ids_alerts(source_ip)")
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_alerts_severity ON ids_alerts(severity)")
         await db.execute("CREATE INDEX IF NOT EXISTS idx_threat_intel_ip ON threat_intelligence(ip_address)")
         await db.execute("CREATE INDEX IF NOT EXISTS idx_patterns_source_ip ON attack_patterns(source_ip)")
         await db.execute("CREATE INDEX IF NOT EXISTS idx_patterns_timestamp ON attack_patterns(timestamp)")
         await db.execute("CREATE INDEX IF NOT EXISTS idx_auth_events_timestamp ON authentication_events(timestamp)")
         await db.execute("CREATE INDEX IF NOT EXISTS idx_auth_events_source_ip ON authentication_events(source_ip)")
         await db.execute("CREATE INDEX IF NOT EXISTS idx_auth_events_success ON authentication_events(success)")
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_blocked_ips_ip ON blocked_ips(ip_address)")
     
     async def log_connection(self, connection_data):
         """Log a honeypot connection with accurate timestamp"""
@@ -508,15 +530,58 @@ class DatabaseManager:
             self.logger.error(f"Error fetching alert severity breakdown: {e}")
             return {}
 
+    async def get_authentication_stats(self, since: datetime) -> dict:
+        """Get authentication success/failed statistics"""
+        try:
+            async with aiosqlite.connect(self.db_path) as db:
+                cursor = await db.execute(
+                    """SELECT success, COUNT(*) as count
+                       FROM authentication_events
+                       WHERE timestamp >= ?
+                       GROUP BY success""",
+                    (since.isoformat(),)
+                )
+                rows = await cursor.fetchall()
+                stats = {"successful": 0, "failed": 0}
+                for row in rows:
+                    if row[0]:  # success = 1 (True)
+                        stats["successful"] = row[1]
+                    else:  # success = 0 (False)
+                        stats["failed"] = row[1]
+                return stats
+        except Exception as e:
+            self.logger.error(f"Error fetching authentication stats: {e}")
+            return {"successful": 0, "failed": 0}
+
+    async def get_geo_distribution(self, since: datetime) -> dict:
+        """Get geographical distribution of attacks (by country)"""
+        try:
+            async with aiosqlite.connect(self.db_path) as db:
+                cursor = await db.execute(
+                    """SELECT country, COUNT(*) as count
+                       FROM honeypot_connections
+                       WHERE timestamp >= ? AND country IS NOT NULL
+                       GROUP BY country
+                       ORDER BY count DESC
+                       LIMIT 10""",
+                    (since.isoformat(),)
+                )
+                rows = await cursor.fetchall()
+                return {row[0]: row[1] for row in rows}
+        except Exception as e:
+            self.logger.error(f"Error fetching geo distribution: {e}")
+            return {}
+
     # Enhanced Log Management Methods
     async def clear_all_logs(self):
-        """Clear all honeypot connections and IDS alerts"""
+        """Clear all honeypot connections, IDS alerts, and authentication events"""
         try:
             async with aiosqlite.connect(self.db_path) as db:
                 await db.execute("DELETE FROM honeypot_connections")
                 await db.execute("DELETE FROM ids_alerts")
+                await db.execute("DELETE FROM authentication_events")
                 await db.commit()
-                self.logger.info("All logs cleared successfully")
+                self.logger.info("All logs cleared successfully (connections, alerts, and authentication events)")
                 return True
         except Exception as e:
             self.logger.error(f"Error clearing logs: {e}")
@@ -757,3 +822,114 @@ class DatabaseManager:
         except Exception as e:
             self.logger.error(f"Error getting threat summary: {e}")
             return {'connections': [], 'alerts': [], 'period_hours': hours}
+
+    async def add_blocked_ip(self, ip_address: str, reason: str = None) -> bool:
+        """Add an IP address to the blocklist"""
+        try:
+            async with aiosqlite.connect(self.db_path) as db:
+                await db.execute(
+                    """INSERT OR REPLACE INTO blocked_ips (ip_address, reason, timestamp)
+                       VALUES (?, ?, CURRENT_TIMESTAMP)""",
+                    (ip_address, reason)
+                )
+                await db.commit()
+                self.logger.info(f"IP {ip_address} added to blocklist: {reason}")
+                return True
+        except Exception as e:
+            self.logger.error(f"Error adding IP to blocklist: {e}")
+            return False
+
+    async def is_ip_blocked(self, ip_address: str) -> bool:
+        """Check if an IP address is blocked"""
+        try:
+            async with aiosqlite.connect(self.db_path) as db:
+                cursor = await db.execute(
+                    "SELECT id FROM blocked_ips WHERE ip_address = ?",
+                    (ip_address,)
+                )
+                result = await cursor.fetchone()
+                return result is not None
+        except Exception as e:
+            self.logger.error(f"Error checking blocked IP: {e}")
+            return False
+
+    async def get_blocked_ips(self) -> list:
+        """Get all blocked IP addresses"""
+        try:
+            async with aiosqlite.connect(self.db_path) as db:
+                cursor = await db.execute(
+                    "SELECT ip_address, reason, timestamp FROM blocked_ips ORDER BY timestamp DESC"
+                )
+                rows = await cursor.fetchall()
+                return [
+                    {
+                        'ip_address': row[0],
+                        'reason': row[1],
+                        'timestamp': row[2]
+                    }
+                    for row in rows
+                ]
+        except Exception as e:
+            self.logger.error(f"Error getting blocked IPs: {e}")
+            return []
+
+    async def get_unique_attacking_ips(self) -> list:
+        """Get list of unique attacking IPs with event counts"""
+        try:
+            async with aiosqlite.connect(self.db_path) as db:
+                cursor = await db.execute("""
+                    SELECT
+                        source_ip,
+                        COUNT(*) as event_count,
+                        MAX(timestamp) as last_seen,
+                        GROUP_CONCAT(DISTINCT alert_type) as alert_types
+                    FROM alerts
+                    WHERE source_ip NOT IN ('127.0.0.1', 'localhost')
+                    GROUP BY source_ip
+                    ORDER BY event_count DESC
+                """)
+                rows = await cursor.fetchall()
+                return [
+                    {
+                        'ip': row[0],
+                        'event_count': row[1],
+                        'last_seen': row[2],
+                        'alert_types': row[3].split(',') if row[3] else []
+                    }
+                    for row in rows
+                ]
+        except Exception as e:
+            self.logger.error(f"Error getting unique attacking IPs: {e}")
+            return []
+
+    async def get_ip_event_timeline(self, ip_address: str) -> list:
+        """Get chronological timeline of all events for a specific IP"""
+        try:
+            async with aiosqlite.connect(self.db_path) as db:
+                cursor = await db.execute("""
+                    SELECT
+                        timestamp,
+                        alert_type,
+                        severity,
+                        description,
+                        destination_port,
+                        protocol
+                    FROM alerts
+                    WHERE source_ip = ?
+                    ORDER BY timestamp DESC
+                """, (ip_address,))
+                rows = await cursor.fetchall()
+                return [
+                    {
+                        'timestamp': row[0],
+                        'type': row[1],
+                        'severity': row[2],
+                        'description': row[3],
+                        'port': row[4],
+                        'protocol': row[5]
+                    }
+                    for row in rows
+                ]
+        except Exception as e:
+            self.logger.error(f"Error getting IP event timeline: {e}")
+            return []

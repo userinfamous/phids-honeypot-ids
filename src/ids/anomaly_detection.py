@@ -66,34 +66,39 @@ class AnomalyDetector:
         """Analyze connection for anomalies"""
         anomalies = []
         current_time = datetime.now()
-        
+        source_ip = connection_data.get('source_ip', '')
+
         try:
+            # Filter out localhost and internal connections to reduce false positives
+            if self._is_localhost_or_internal(source_ip):
+                return []
+
             # Record connection
             self.recent_activity['connections'].append({
                 'timestamp': current_time,
-                'source_ip': connection_data.get('source_ip'),
+                'source_ip': source_ip,
                 'destination_port': connection_data.get('destination_port'),
                 'service_type': connection_data.get('service_type'),
                 'duration': connection_data.get('duration', 0),
                 'bytes_sent': connection_data.get('bytes_sent', 0),
                 'bytes_received': connection_data.get('bytes_received', 0)
             })
-            
+
             # Check for various anomalies
             anomalies.extend(await self._detect_connection_rate_anomaly(connection_data))
             anomalies.extend(await self._detect_unusual_port_activity(connection_data))
             anomalies.extend(await self._detect_payload_size_anomaly(connection_data))
             anomalies.extend(await self._detect_behavioral_anomaly(connection_data))
-            
+
             # Update statistics
             if anomalies:
                 self.stats['anomalies_detected'] += len(anomalies)
-            
+
             self.stats['last_analysis'] = current_time
-            
+
         except Exception as e:
             self.logger.error(f"Error in anomaly analysis: {e}")
-        
+
         return anomalies
     
     async def analyze_statistics(self, packet_stats):
@@ -382,15 +387,53 @@ class AnomalyDetector:
                 'alerts': len(self.recent_activity['alerts'])
             }
         }
-    
+
+    def _is_localhost_or_internal(self, ip_address):
+        """Check if IP is localhost or internal network to reduce false positives"""
+        if not ip_address:
+            return True
+
+        # Localhost addresses
+        if ip_address in ['127.0.0.1', 'localhost', '::1']:
+            return True
+
+        # Private IP ranges (RFC 1918)
+        private_ranges = [
+            ('10.0.0.0', '10.255.255.255'),
+            ('172.16.0.0', '172.31.255.255'),
+            ('192.168.0.0', '192.168.255.255'),
+        ]
+
+        try:
+            # Convert IP to integer for range checking
+            ip_parts = [int(x) for x in ip_address.split('.')]
+            if len(ip_parts) != 4:
+                return False
+
+            ip_int = (ip_parts[0] << 24) + (ip_parts[1] << 16) + (ip_parts[2] << 8) + ip_parts[3]
+
+            for start, end in private_ranges:
+                start_parts = [int(x) for x in start.split('.')]
+                end_parts = [int(x) for x in end.split('.')]
+
+                start_int = (start_parts[0] << 24) + (start_parts[1] << 16) + (start_parts[2] << 8) + start_parts[3]
+                end_int = (end_parts[0] << 24) + (end_parts[1] << 16) + (end_parts[2] << 8) + end_parts[3]
+
+                if start_int <= ip_int <= end_int:
+                    return True
+        except (ValueError, IndexError):
+            pass
+
+        return False
+
     def clear_baselines(self):
         """Clear all baseline data"""
         for baseline in self.baselines.values():
             if hasattr(baseline, 'clear'):
                 baseline.clear()
-        
+
         for activity in self.recent_activity.values():
             activity.clear()
-        
+
         self.stats['baseline_samples'] = 0
         self.logger.info("Cleared all baseline data")

@@ -173,28 +173,14 @@ class PacketCapture:
             self.packet_stats[f"dst_port_{dst_port}"] += 1
     
     def _detect_suspicious_activity(self, packet_info):
-        """Detect suspicious network activity"""
-        src_ip = packet_info['src_ip']
-        current_time = time.time()
-        
-        # Skip if in cooldown period
-        if current_time - self.alert_cooldown[src_ip] < self.cooldown_period:
-            return
-        
-        # Port scan detection
-        if self._detect_port_scan(packet_info):
-            self._generate_alert("port_scan", packet_info, "Potential port scan detected")
-            self.alert_cooldown[src_ip] = current_time
-        
-        # SYN flood detection
-        if self._detect_syn_flood(packet_info):
-            self._generate_alert("syn_flood", packet_info, "Potential SYN flood detected")
-            self.alert_cooldown[src_ip] = current_time
-        
-        # Unusual traffic patterns
-        if self._detect_unusual_traffic(packet_info):
-            self._generate_alert("unusual_traffic", packet_info, "Unusual traffic pattern detected")
-            self.alert_cooldown[src_ip] = current_time
+        """Detect suspicious network activity - DISABLED
+
+        Automatic packet capture alerts are disabled. Only user-triggered attacks
+        via attack buttons will generate alerts. This prevents false positives from
+        normal network traffic.
+        """
+        # Automatic detection disabled - only manual attacks via buttons generate alerts
+        pass
     
     def _detect_port_scan(self, packet_info):
         """Detect potential port scanning"""

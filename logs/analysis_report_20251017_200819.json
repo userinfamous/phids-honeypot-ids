@@ -1,0 +1,42 @@
+{
+  "timestamp": "2025-10-17T20:08:19.014135",
+  "summary": {
+    "total_attack_patterns": 760,
+    "unique_attackers": 2,
+    "most_targeted_service": "http",
+    "total_connections_analyzed": 629
+  },
+  "top_attackers": {
+    "127.0.0.1": 616,
+    "192.168.1.100": 13
+  },
+  "attack_patterns": {
+    "rapid_fire_attack": 9,
+    "Suspicious User Agent": 13,
+    "anomaly_detection": 27,
+    "Unknown": 678,
+    "port_scan": 22,
+    "multi_service_attack": 8,
+    "unusual_traffic": 1,
+    "test_alert": 1,
+    "pytest_alert": 1
+  },
+  "service_activity": {
+    "http": 584,
+    "ssh": 45
+  },
+  "time_patterns": {
+    "hourly": {
+      "16": 107
+    },
+    "daily": {
+      "Friday": 107
+    }
+  },
+  "ioc_summary": {
+    "unique_ips": 0,
+    "unique_domains": 1,
+    "attack_patterns": 0,
+    "user_agents": 0
+  }
+}
