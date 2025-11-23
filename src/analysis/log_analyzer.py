@@ -171,8 +171,8 @@ class LogAnalyzer:
         top_attackers = await self.db_manager.get_top_attackers(since, limit=50)
         
         for attacker in top_attackers:
-            ip = attacker['source_ip']
-            count = attacker['connection_count']
+            ip = attacker['ip']
+            count = attacker['count']
             
             # Update top attackers
             self.analysis_results['top_attackers'][ip] = count
